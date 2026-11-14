@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!--
+  Sacred Timeline — a personal Marvel watch tracker.
+  One self-contained file: no build step, no dependencies, no network needed.
+
+  How it is laid out, in order:
+    head          meta, icons, and the whole stylesheet
+    body          background layers, then the page itself
+    script        DATA        the 62 titles and their ordering keys
+                  state       what is watched, rated, hidden, and preferences
+                  storage     artifact storage if present, else localStorage
+                  render      the list, phase bar, next-up and countdown
+                  renderStats / renderSettings   the other two views
+                  commands    search-box easter eggs
+
+  Progress is saved per browser. Settings → Your data exports a backup or a
+  short progress code for moving between devices.
+-->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="A personal Marvel watch tracker: every film and series in six orderings, with watch history, ratings and stats.">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#05060a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sacred Timeline">
+<link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAAAFlElEQVR42u3dL3ZUTRDG4c49wwhicBy2gMXE4BAgWANsIbCOwBZgDQgicDEYbLbAwWEwUYjh5OSQmftvuqveqv696hN8ZEg9U13dM/fekwfbh4WQfRn4FRBwEHAQcBBwEHAQcBBwEHAQcBBwEAIOAg4CDgIOAg4CDgIOAg4CDgIOQsBBJrPp85998/p5KWX75Wr8j7369Gf3H1/fnnb4Wzrp4bqVHYW9Gfdxi+N+euCy6RBEldx1kxXKBhMVoSRTssEEStLiEGGxV0l0IhtM0Ejy7FbqshjZrYxsVdYlHJFNtyxYa/J0DrOGYdBFovgIgKMKi6UaDKzoE1HHcYyMuiBaQBH3oYtjNQsbExWVyBIRxbFOhheL44lo+lDEsVSGgonjlQj60MKRg0UaIkI4FsnQZ7GaiI6PARkGWVTv6iezsTvHfBnhWKwuvEL/GJCh2UIU+odz55gpIwGLdbX37R8DMpRbiG//GJCBD61lZY6MxCxWlN9lfRmQEaKFuPQPxSveupKhs3H1xzHZNjqUMdOHffMYkIEPfxzICOfDDge1DzedWG9lD/UP6Ey2B/uhVeKcAxmTPno55/hPAzImlw+vja7bRU3bL1fRL1JKNmGoLCskRLgnGAEHAQcBB4m8W7k5vyylbD++5FfcLp/f/TsLefPhNBKOKER+/vo9/geePH6kzCLeVnZn4n50lEyakFVyiEWL5mF6CHZzfunrY4WJ+/+voxKbhtFwID3UNtxbxTEyGv1V4m662K20qKWgj9g47NeUpu9y+xbSaFdihENqTbGpnE4Lqb6yGH4TzLZtWNbM8mdZNo+cM4f9uznlCFITh8ia4lUnBR91VxajzmG2pvhWyOanm60sqZYVhfdupvWFT2VJexzuA4fOW9b3lVQcOyw6h8HAodbMW78em7GDZYWkxqE5AyaYTOkcBBzEC8fIVqX1NKrcvZu+tpGZtNaGhc5BwEF6w6G/Iwi9Z6FzEHAQcBBwEHAQcBBwEHAQcBBwEHDEjOadVWK9QjoH8cMx8qUNzdt1JMjIlzZqff04fOdQ7tuh1xSWFQIO0i0Oze4dfU0xwsFMajmNKuLwvYek2tvU8fVUvFIyz8yh4yPBgsJASjRw2IwdCm9Zg9dgdh/jmjgUbm3u68NdZ91bMyRcVrwqlGbUcMBhuaG1r5PZT7S8N35lHDoPzbD0IdIzqt/ux3RZMT4Ns6mZpQzjR2psSursKtfogtV8Q0bzziH40K4WVVST0eIWcskfqXG3lrXKWfGvUhAwklaPK787Xgj2krjPeNs7fIR8OqTscyFvKx306ZA7Da3n01adgzCQEnAQcBACDiKP4+z64uz6ghocPA749qxTHLCY6cORyOAuAyWTbcPLh/U5xyEK35++B8S4hu2LH5lxjDcJfMzpE5ZEBhEZRHBKtcMx2RjQM6f2OTsHPmLJcNit4COKjKJ5QtqhD/fzLhUcc3YlXfmYI8O+bRTH73PMLH/u/e3MhuEiw3NZmVn1xC1EXIbzzNGzD30ZReFrgvNrn2OJmT97+sqQ2K3ML3mCFhJIRtH5gvGiwkdsIYs2qwoyis45x6J6h2shEWUUtUsTllZdv4UsPd3SkVE0r1vJQSQ0C10cqxcOBSXrDsIFZRTlK95WDxZeRFZ/PqIpo+hfDnnM7Gmj5JjPzGRZxMBRa29SF0qVD1HFZZRAF1LX3b4utVL3I3V9FsFwlDbHGyNKGn3HIoqMEuueYLtCxj1ED8QiXudo0UXG15dazSMci3idY29RlRtJUBPhcYivNdFZJMEh1UhymMiGw1dJMhNpceydNFtAyQoiw26lymZn8ijsdrfSAwVwkAXhnmAEHAQcBBwEHAQcBBwEHAQcBBwEHISAg4CDgIOAg4CDgIOAg4CDgIOAgxBwkOn8Bbb9S1febrPZAAAAAElFTkSuQmCC">
+<link rel="icon" href="data:image/png;base64,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">
+<title>Sacred Timeline — MCU watch tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+
+</head>
+<body>
+<noscript><p style="max-width:40em;margin:3em auto;padding:0 1.2em;color:#a4acc1;font:16px/1.6 system-ui,sans-serif">
+This tracker needs JavaScript. Everything runs in your browser — nothing is sent anywhere.
+</p></noscript>
+
+<canvas id="stars"></canvas>
+<div class="nebula a"></div>
+<div class="nebula b"></div>
+<div id="backdrop" aria-hidden="true"><i class="bd-fill"></i><i class="bd-sharp"></i></div>
+
+<svg class="fxdefs" aria-hidden="true" focusable="false">
+  <filter id="dust" x="-45%" y="-45%" width="190%" height="190%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.014 0.038" numOctaves="3" seed="5" result="noise"/>
+    <feDisplacementMap id="dustMap" in="SourceGraphic" in2="noise" scale="0" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+<div id="flash" aria-hidden="true"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<div id="reactor" aria-hidden="true">
+  <div class="disc"></div>
+  <svg class="core" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <g class="r1" fill="none" stroke="#bdefff" stroke-width="1.1" opacity=".75">
+      <circle cx="100" cy="100" r="86" stroke-dasharray="4 12"/>
+    </g>
+    <g class="r2" fill="none" stroke="#8fe6ff" stroke-width="2.4" opacity=".85">
+      <circle cx="100" cy="100" r="70" stroke-dasharray="40 22"/>
+    </g>
+    <g class="r3" fill="none" stroke="#dff6ff" stroke-width="1" opacity=".6">
+      <circle cx="100" cy="100" r="54" stroke-dasharray="2 8"/>
+    </g>
+    <circle cx="100" cy="100" r="38" fill="none" stroke="#bdefff" stroke-width="3.5" opacity=".9"/>
+    <g class="r4" fill="none" stroke="#eaffff" stroke-width="1.6" opacity=".8">
+      <path d="M100 68 L128 116 L72 116 Z"/>
+    </g>
+    <circle class="pip" cx="100" cy="100" r="17" fill="#f4feff"/>
+  </svg>
+</div>
+
+<div class="wrap">
+  <header>
+    <div class="masthead">
+      <div class="mast-text">
+        <h1 class="title">Sacred Timeline</h1>
+        <p class="sub">Every Marvel Studios film and series, in whatever order you want to take them. Colour returns to a title once you've watched it.</p>
+      </div>
+      <div class="tabs" role="tablist">
+        <button id="tabList" role="tab" aria-selected="true">Timeline</button>
+        <button id="tabStats" role="tab" aria-selected="false">Stats</button>
+        <button id="tabSet" role="tab" aria-selected="false" aria-label="Settings">Settings</button>
+      </div>
+    </div>
+    <div class="constellation" id="constellation"></div>
+    <p class="tally" id="tally"></p>
+    <p class="countdown" id="countdown" hidden></p>
+    <div class="nextup" id="nextup" hidden></div>
+  </header>
+
+  <div class="controls" id="controls">
+    <div class="field" id="qfield"><input type="search" id="q" placeholder="Search titles" autocomplete="off"><span class="hint">↵</span></div>
+    <select id="sort" aria-label="Order">
+      <option value="release">Release order</option>
+      <option value="chrono">Story chronology</option>
+      <option value="sacred">Sacred Timeline</option>
+      <option value="phase">By phase</option>
+      <option value="saga">By saga</option>
+      <option value="next">Unwatched first</option>
+      <option value="short">Shortest first</option>
+      <option value="long">Longest first</option>
+      <option value="az">A to Z</option>
+    </select>
+    <select id="show" aria-label="Show">
+      <option value="all">Everything</option>
+      <option value="unseen">Not watched</option>
+      <option value="seen">Watched</option>
+      <option value="part">Part watched</option>
+    </select>
+    <select id="maxlen" aria-label="Time available">
+      <option value="0">Any length</option>
+      <option value="60">Under 1 hour</option>
+      <option value="90">Under 1½ hours</option>
+      <option value="120">Under 2 hours</option>
+      <option value="150">Under 2½ hours</option>
+      <option value="999">Over 2½ hours</option>
+    </select>
+    <label class="toggle"><input type="checkbox" id="series"> Series &amp; specials</label>
+  </div>
+
+  <div class="filterbar" id="filterbar"></div>
+  <div id="list"></div>
+  <div id="statsview" hidden></div>
+  <div id="settingsview" hidden></div>
+
+  <footer>
+    <span class="note"><kbd>/</kbd> search · <kbd>J</kbd><kbd>K</kbd> move · <kbd>X</kbd> watched · <kbd>Enter</kbd> open · <kbd>1</kbd>–<kbd>6</kbd> phase · <kbd>R</kbd> random</span>
+    <div id="status"></div>
+  </footer>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

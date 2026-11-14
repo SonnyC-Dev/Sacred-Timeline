@@ -1,0 +1,241 @@
+{
+ "im1": {
+  "p": "assets/posters/im1.jpg",
+  "min": 126
+ },
+ "cap1": {
+  "p": "assets/posters/cap1.jpg",
+  "min": 124
+ },
+ "cm": {
+  "p": "assets/posters/cm.jpg",
+  "min": 124
+ },
+ "im2": {
+  "p": "assets/posters/im2.jpg",
+  "min": 124
+ },
+ "hulk": {
+  "p": "assets/posters/hulk.jpg",
+  "min": 114
+ },
+ "thor1": {
+  "p": "assets/posters/thor1.jpg",
+  "min": 115
+ },
+ "av1": {
+  "p": "assets/posters/av1.jpg",
+  "min": 143
+ },
+ "im3": {
+  "p": "assets/posters/im3.jpg",
+  "min": 130
+ },
+ "thor2": {
+  "p": "assets/posters/thor2.jpg",
+  "min": 112
+ },
+ "cap2": {
+  "p": "assets/posters/cap2.jpg",
+  "min": 136
+ },
+ "gotg1": {
+  "p": "assets/posters/gotg1.jpg",
+  "min": 121
+ },
+ "gotg2": {
+  "p": "assets/posters/gotg2.jpg",
+  "min": 137
+ },
+ "av2": {
+  "p": "assets/posters/av2.jpg",
+  "min": 141
+ },
+ "am1": {
+  "p": "assets/posters/am1.jpg",
+  "min": 117
+ },
+ "cap3": {
+  "p": "assets/posters/cap3.jpg",
+  "min": 147
+ },
+ "bw": {
+  "p": "assets/posters/bw.jpg",
+  "min": 134
+ },
+ "bp1": {
+  "p": "assets/posters/bp1.jpg",
+  "min": 135
+ },
+ "sm1": {
+  "p": "assets/posters/sm1.jpg",
+  "min": 133
+ },
+ "ds1": {
+  "p": "assets/posters/ds1.jpg",
+  "min": 115
+ },
+ "thor3": {
+  "p": "assets/posters/thor3.jpg",
+  "min": 131
+ },
+ "am2": {
+  "p": "assets/posters/am2.jpg",
+  "min": 119
+ },
+ "av3": {
+  "p": "assets/posters/av3.jpg",
+  "min": 149
+ },
+ "av4": {
+  "p": "assets/posters/av4.jpg",
+  "min": 181
+ },
+ "wv": {
+  "p": "assets/posters/wv.jpg",
+  "ep": 9
+ },
+ "tfatws": {
+  "p": "assets/posters/tfatws.jpg",
+  "ep": 6
+ },
+ "shang": {
+  "p": "assets/posters/shang.jpg",
+  "min": 132
+ },
+ "etern": {
+  "p": "assets/posters/etern.jpg",
+  "min": 156
+ },
+ "sm2": {
+  "p": "assets/posters/sm2.jpg",
+  "min": 129
+ },
+ "hawk": {
+  "p": "assets/posters/hawk.jpg",
+  "ep": 6
+ },
+ "sm3": {
+  "p": "assets/posters/sm3.jpg",
+  "min": 148
+ },
+ "dpw": {
+  "p": "assets/posters/dpw.jpg",
+  "min": 128
+ },
+ "mm": {
+  "p": "assets/posters/mm.jpg",
+  "ep": 6
+ },
+ "mk": {
+  "p": "assets/posters/mk.jpg",
+  "ep": 6
+ },
+ "ds2": {
+  "p": "assets/posters/ds2.jpg",
+  "min": 126
+ },
+ "thor4": {
+  "p": "assets/posters/thor4.jpg",
+  "min": 119
+ },
+ "shulk": {
+  "p": "assets/posters/shulk.jpg",
+  "ep": 9
+ },
+ "wbn": {
+  "p": "assets/posters/wbn.jpg",
+  "min": 55
+ },
+ "bp2": {
+  "p": "assets/posters/bp2.jpg",
+  "min": 162
+ },
+ "gotgh": {
+  "p": "assets/posters/gotgh.jpg",
+  "min": 45
+ },
+ "echo": {
+  "p": "assets/posters/echo.jpg",
+  "ep": 5
+ },
+ "agatha": {
+  "p": "assets/posters/agatha.jpg",
+  "ep": 9
+ },
+ "iron": {
+  "p": "assets/posters/iron.jpg",
+  "ep": 6
+ },
+ "quant": {
+  "p": "assets/posters/quant.jpg",
+  "min": 125
+ },
+ "gotg3": {
+  "p": "assets/posters/gotg3.jpg",
+  "min": 150
+ },
+ "si": {
+  "p": "assets/posters/si.jpg",
+  "ep": 6
+ },
+ "marvels": {
+  "p": "assets/posters/marvels.jpg",
+  "min": 105
+ },
+ "ddba": {
+  "p": "assets/posters/ddba.jpg"
+ },
+ "cap4": {
+  "p": "assets/posters/cap4.jpg",
+  "min": 119
+ },
+ "tbolts": {
+  "p": "assets/posters/tbolts.jpg",
+  "min": 127
+ },
+ "ff": {
+  "p": "assets/posters/ff.jpg",
+  "min": 115
+ },
+ "smbnd": {
+  "p": "assets/posters/smbnd.jpg",
+  "min": 145
+ },
+ "avd": {
+  "p": "assets/posters/avd.jpg"
+ },
+ "avsw": {
+  "p": "assets/posters/avsw.jpg"
+ },
+ "loki1": {
+  "p": "assets/posters/loki1.jpg"
+ },
+ "loki2": {
+  "p": "assets/posters/loki2.jpg"
+ },
+ "wi1": {
+  "p": "assets/posters/wi1.jpg"
+ },
+ "wi2": {
+  "p": "assets/posters/wi2.jpg"
+ },
+ "wi3": {
+  "p": "assets/posters/wi3.jpg"
+ },
+ "xmen97": {
+  "p": "assets/posters/xmen97.jpg"
+ },
+ "eow": {
+  "p": "assets/posters/eow.jpg",
+  "ep": 4
+ },
+ "yfnsm": {
+  "p": "assets/posters/yfnsm.jpg",
+  "ep": 10
+ },
+ "mz": {
+  "p": "assets/posters/mz.jpg",
+  "ep": 4
+ }
+}
