@@ -98,10 +98,13 @@ async function load(){
   /* Merge the built-in artwork with whatever this browser has stored.
      Precedence for the image: a stored embedded image (you imported it) beats
      a built-in one, but a built-in embedded image beats a stored web link —
-     a link is useless anywhere the image host is blocked. */
+     a link is useless anywhere the image host is blocked.
+     Only a stored data: image counts as "you imported it". A stored assets/
+     path is just a copy of the src/ project's built-in poster, and must never
+     beat the single file's embedded one (it would point at a missing file). */
   for(const id in BUILTIN_ART){
     const b=BUILTIN_ART[id], cur=meta[id]||{};
-    const curEmbedded=isLocal(cur.p), builtEmbedded=isLocal(b.p);
+    const curEmbedded=/^data:/.test(cur.p||""), builtEmbedded=isLocal(b.p);
     let p;
     if(curEmbedded) p=cur.p;
     else if(builtEmbedded) p=b.p;
@@ -317,8 +320,9 @@ function applyTheme(p, preview){
 /* ============================ POSTER ART ============================ */
 /* A value is either an embedded image, a full URL, or a bare TMDB path that
    needs the CDN prefix. Only the last case gets prefixed — data: URLs used to
-   fall through to it and come out mangled. */
-const isURL = p => /^(https?:|data:|blob:)/.test(p||"");
+   fall through to it and come out mangled. In the src/ project, built-in
+   posters are files under assets/ and must not be prefixed either. */
+const isURL = p => /^(https?:|data:|blob:|assets\/)/.test(p||"");
 const IMG     = p => isURL(p) ? p : "https://image.tmdb.org/t/p/w185"+p;
 const IMG_BIG = p => isURL(p) ? p : "https://image.tmdb.org/t/p/w500"+p;
 function artOf(m){ const e=meta[m.id]; return e&&e.p ? e.p : ""; }
@@ -449,7 +453,8 @@ function importUrlList(text){
 
 /* Convert remote artwork into downscaled images held in this browser, so
    startup stops making ~60 network requests. */
-function isLocal(p){ return /^data:/.test(p||""); }
+/* assets/ posters ship with the src/ project, so they count as local too */
+function isLocal(p){ return /^(data:|assets\/)/.test(p||""); }
 function localCount(){ return DATA.filter(m=>isLocal(artOf(m))).length; }
 
 /* Copying an image via fetch() and via <img> use different browser permissions.

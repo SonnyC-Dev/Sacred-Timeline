@@ -44,8 +44,14 @@ def main(src, out):
         "/* ==== BEGIN TITLES ==== */\nconst DATA = %s;\n/* ==== END TITLES ==== */" % j(titles))
     js = js.replace("/*ARTWORK*/",
         "/* ==== BEGIN ARTWORK ==== */\nconst BUILTIN_ART=%s;\n/* ==== END ARTWORK ==== */" % j(art))
-    page = page.replace('<script src="app.js"></script>',
-                        "<script>\n" + js.strip() + "\n</script>")
+    # src/index.html starts the app through dev-loader.js (which fetches the JSON);
+    # the single file needs neither, so that tag becomes the inlined code.
+    # NOTE: this change is untested; Python was not available when it was made.
+    inline = "<script>\n" + js.strip() + "\n</script>"
+    page = page.replace('<script src="dev-loader.js"></script>', inline)
+    page = page.replace('<script src="app.js"></script>', inline)
+    if re.search(r'<script src="(dev-loader|app)\.js">', page):
+        sys.exit("could not inline the script")
 
     open(out, "w", encoding="utf-8").write(page)
     print("built %s  (%.2f MB, %d posters inlined)" % (out, len(page) / 1048576, folded))

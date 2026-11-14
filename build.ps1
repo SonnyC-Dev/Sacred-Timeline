@@ -54,7 +54,11 @@ foreach ($j in $titles, $art) { if ($j.Contains("</script")) { throw "data conta
 $page = $page.Replace('<link rel="stylesheet" href="styles.css">', "<style>`n" + $css.Trim() + "`n</style>")
 $js = $js.Replace("/*TITLES*/", "/* ==== BEGIN TITLES ==== */`nconst DATA = $titles;`n/* ==== END TITLES ==== */")
 $js = $js.Replace("/*ARTWORK*/", "/* ==== BEGIN ARTWORK ==== */`nconst BUILTIN_ART=$art;`n/* ==== END ARTWORK ==== */")
-$page = $page.Replace('<script src="app.js"></script>', "<script>`n" + $js.Trim() + "`n</script>")
+# src/index.html starts the app through dev-loader.js (which fetches the JSON);
+# the single file needs neither, so that tag becomes the inlined code.
+$inline = "<script>`n" + $js.Trim() + "`n</script>"
+$page = $page.Replace('<script src="dev-loader.js"></script>', $inline).Replace('<script src="app.js"></script>', $inline)
+if ($page -match '<script src="(dev-loader|app)\.js">' -or -not $page.Contains("const BUILTIN_ART=")) { throw "could not inline the script" }
 
 $outPath = [IO.Path]::GetFullPath((Join-Path (Get-Location) $Out))
 [IO.File]::WriteAllText($outPath, $page, $utf8)

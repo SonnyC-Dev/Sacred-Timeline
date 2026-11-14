@@ -1,4 +1,7 @@
 <#
+ONE-OFF, ALREADY DONE. src/ is now the master copy: running this into src/
+would overwrite every edit made there with the old file. Kept for history.
+
 Split mcu-tracker.html into an editable project. PowerShell port of split.py,
 for machines without Python. Same inputs, same outputs.
 

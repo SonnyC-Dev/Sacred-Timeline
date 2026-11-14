@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 """
+ONE-OFF, ALREADY DONE. src/ is now the master copy: running this into src/
+would overwrite every edit made there with the old file. Kept for history.
+
 Split mcu-tracker.html into an editable project.
 
     python3 split.py mcu-tracker.html src/

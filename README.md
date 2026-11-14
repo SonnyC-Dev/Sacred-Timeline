@@ -8,25 +8,37 @@ Hosted copy: https://claude.ai/artifact/JGoSWpQjedarHP2GbKkHEr
 
 ---
 
-## Moving to a project layout
+## Project layout
+
+**`src/` is the master copy. Edit there only.** The split has been done once
+and is finished: `split.py` / `split.ps1` are kept for history, and running
+either into `src/` would overwrite your edits.
+
+This machine has no Python, so each script has a PowerShell twin:
 
 ```
-python3 split.py mcu-tracker.html src/     # explode into editable files
-cd src && python3 -m http.server 8000      # the JSON blocks need http, not file://
-python3 build.py src/ mcu-tracker.html     # fold it back into one portable file
+powershell -ExecutionPolicy Bypass -File serve.ps1 -Root src             # run it: http://localhost:8000
+powershell -ExecutionPolicy Bypass -File build.ps1 src mcu-tracker.build.html   # fold into one portable file
 ```
 
-The round-trip is verified: a rebuilt file passes the same tests as the
-original. Keep both — edit the project, ship the single file.
+`src/` must be served over http; opening `index.html` as a file can't read the
+JSON. `dev-loader.js` reads the two data files and then starts `app.js`; the
+build swaps it for everything inlined, so the single file never uses it.
+`build.py` has the same change but was not tested (no Python at the time).
 
 ```
-src/index.html          page shell with placeholders
+src/index.html          page shell
+src/dev-loader.js       loads the JSON, then app.js (src/ only)
 src/styles.css          44 KB
 src/app.js              112 KB
 src/data/titles.json    the 62 titles
 src/data/artwork.json   runtimes, episode counts, poster paths
 src/assets/posters/     62 JPEGs, 1.8 MB
 ```
+
+Built-in posters in `src/` are file paths (`assets/posters/…`); in the built
+file they are embedded images. `isURL()` and `isLocal()` accept both, so the
+app treats them the same way.
 
 Base64 inflates bytes by about a third, so the single file is 2.4 MB where the
 project is 2.0 MB.
