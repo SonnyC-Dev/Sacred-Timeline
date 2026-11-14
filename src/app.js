@@ -52,6 +52,89 @@ let state = {watched:{}, extra:{}, hidden:{}, sort:"release", show:"all", series
    supplies the data; build.ps1 / build.py write it in for the single file. */
 /*ARTWORK*/
 
+/* ============================ INTRO ============================
+   Start-up sequence over #intro: posters turn like comic pages, a Bifröst beam
+   sweeps across, the title lands, then it fades into the app. Runs before
+   load() so there is no flash of the page underneath. INTRO.done resolves when
+   it has finished (or was skipped) — the masthead decode waits for it, so that
+   plays while the title is actually on screen.
+   Skipped: reduced motion, Effects off (checked after load), or already played
+   in this tab. Tap / any key skips it. Built-in posters only: they are embedded
+   (data:) or project files (assets/), so it never needs the network. */
+const INTRO=(()=>{
+  const el=document.getElementById("intro");
+  let finish, ended=false;
+  const done=new Promise(r=>finish=r);
+  const end=fast=>{
+    if(ended) return; ended=true;
+    if(el){ if(fast) el.style.transition="opacity .25s ease, visibility 0s .25s"; el.classList.add("gone");
+            setTimeout(()=>el.remove(),fast?300:700); }
+    setTimeout(finish,fast?0:450);               /* let the fade mostly clear before the title decodes */
+  };
+  let seen=false;
+  try{ seen=!!sessionStorage.getItem("mcu-intro"); sessionStorage.setItem("mcu-intro","1"); }catch(e){}
+  if(!el || seen || matchMedia("(prefers-reduced-motion: reduce)").matches || typeof Element.prototype.animate!=="function"){
+    if(el) el.remove(); finish(); return {done, skip:()=>{}};
+  }
+  el.classList.add("run");                      /* the script has it: cancel the CSS failsafe */
+  const safety=setTimeout(()=>end(true),7000);
+  ["pointerdown","keydown"].forEach(t=>addEventListener(t,()=>end(true),{once:true,capture:true}));
+
+  const pics=Object.values(BUILTIN_ART).map(a=>a.p).filter(p=>/^(data:|assets\/)/.test(p||""));
+  for(let i=pics.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pics[i],pics[j]]=[pics[j],pics[i]]; }
+  const deck=pics.slice(0,24);
+  const wait=ms=>new Promise(r=>setTimeout(r,ms));
+  const stage=el.querySelector(".intro-stage"), card=el.querySelector(".intro-card"),
+        tint=el.querySelector(".intro-tint"), beams=[...el.querySelectorAll(".intro-beam")],
+        logo=el.querySelector(".intro-logo");
+
+  (async()=>{
+    /* decode the first few up front so the opening turns don't stutter */
+    await Promise.race([Promise.allSettled(deck.slice(0,6).map(p=>{const i=new Image(); i.src=p; return i.decode();})), wait(700)]);
+    /* claude.ai may keep the frame hidden while it loads; start when it can be seen */
+    if(document.visibilityState!=="visible")
+      await new Promise(r=>document.addEventListener("visibilitychange",function v(){ if(document.visibilityState==="visible"){ document.removeEventListener("visibilitychange",v); r(); } }));
+    await wait(150);
+    if(ended || !deck.length) return end(true);
+
+    /* 1. the flip: each poster turns away on a left hinge, revealing the next.
+          Gaps run slow -> fast -> slow, about 1.5s in all. */
+    card.src=deck[0];
+    stage.animate([{transform:"scale(.86)",opacity:0},{transform:"scale(1)",opacity:1}],{duration:260,easing:"ease-out"});
+    await wait(260);
+    for(let i=1;i<deck.length && !ended;i++){
+      const k=i/(deck.length-1), gap=Math.round(40+80*Math.pow(Math.abs(k-.42)*1.7,1.6));
+      const turn=document.createElement("img"); turn.className="intro-turn"; turn.src=card.src; turn.alt="";
+      stage.insertBefore(turn,tint);
+      card.src=deck[i];
+      turn.animate([{transform:"rotateY(0deg)",filter:"brightness(1)"},{transform:"rotateY(-112deg)",filter:"brightness(1.7)"}],
+                   {duration:Math.max(90,gap*1.8),easing:"cubic-bezier(.4,.1,.6,1)",fill:"forwards"}).finished.then(()=>turn.remove(),()=>{});
+      await wait(gap);
+    }
+    if(ended) return;
+
+    /* 2. the Bifröst: beam sweeps across, the poster sinks under a red wash */
+    tint.animate([{opacity:0},{opacity:.72}],{duration:500,fill:"forwards"});
+    card.animate([{opacity:1,transform:"scale(1)"},{opacity:.32,transform:"scale(.94)"}],{duration:700,easing:"ease-out",fill:"forwards"});
+    beams.forEach((b,i)=>b.animate([
+      {opacity:0,transform:"rotate(-16deg) scaleX(0)",transformOrigin:"0 50%"},
+      {opacity:i?.75:1,transform:"rotate(-16deg) scaleX(1)",transformOrigin:"0 50%",offset:.45},
+      {opacity:0,transform:"rotate(-16deg) scaleX(1) scaleY(.2)",transformOrigin:"0 50%"}],
+      {duration:900,easing:"cubic-bezier(.2,.7,.2,1)",fill:"forwards"}));
+    await wait(330);
+
+    /* 3. the title lands, holds, and the intro fades into the app */
+    logo.animate([{opacity:0,transform:"scale(1.45)",filter:"blur(6px)"},{opacity:1,transform:"scale(1)",filter:"blur(0)"}],
+                 {duration:380,easing:"cubic-bezier(.2,.9,.3,1.15)",fill:"forwards"});
+    await wait(850);
+    clearTimeout(safety);
+    end(false);
+    if(window.__bifrost) setTimeout(()=>window.__bifrost(),200);   /* hand-off beam over the stars */
+  })().catch(()=>end(true));
+
+  return {done, skip:()=>end(true)};
+})();
+
 let meta = {};   /* id -> {p:poster path or url, min, ep, epmin} */
 let openIds = new Set(), justMarked=null, cursorId=null;
 let themePhase=0, settledPhase=1;
@@ -2311,12 +2394,14 @@ addEventListener("error",e=>{ if(!document.querySelector("li.entry")) bootFailed
 (async()=>{
  try{
   await load();
+  if(!state.fx) INTRO.skip();                  /* Effects off in Settings: no intro */
   $("#sort").value=state.sort; $("#show").value=state.show; $("#series").checked=state.series;
   $("#maxlen").value=String(state.maxlen||0);
   const r=readRoute();
   state.phase=r.phase;
   applyTheme(state.phase||1);
-  render(); syncStick(); searchMode(); applyPrefs(); decodeTitle();
+  render(); syncStick(); searchMode(); applyPrefs();
+  INTRO.done.then(decodeTitle);                /* decode once the title is actually visible */
   if(r.title){
     openIds.add(r.title); render();
     setTimeout(()=>focusOn(r.title),120);

@@ -712,3 +712,35 @@ body.hulk:before{content:"";position:fixed;inset:0;z-index:54;pointer-events:non
   .art{width:60%;opacity:.22!important}
   footer .note{text-align:left;margin-left:0}
 }
+
+/* ============================ START-UP INTRO ============================
+   Poster flip -> Bifröst sweep -> title, then fades into the app. Transforms and
+   opacity only (no backdrop-filter / clip-path: they break phones, see README).
+   The failsafe animation hides it after 6s if the script never takes over. */
+#intro{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;overflow:hidden;
+  background:radial-gradient(ellipse at 50% 45%,#1a0d12 0%,#05060a 70%);cursor:pointer;
+  animation:introFailsafe .4s 6s forwards}
+#intro>*{grid-area:1/1}
+#intro.run{animation:none}
+#intro.gone{opacity:0;visibility:hidden;transition:opacity .6s ease,visibility 0s .6s}
+@keyframes introFailsafe{to{opacity:0;visibility:hidden}}
+.intro-stage{position:relative;width:min(52vw,280px);aspect-ratio:2/3;perspective:1100px}
+.intro-card,.intro-turn{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  border-radius:5px;box-shadow:0 28px 70px rgba(0,0,0,.75);backface-visibility:hidden}
+.intro-turn{transform-origin:left center;z-index:2}
+.intro-tint{position:absolute;inset:0;z-index:3;border-radius:5px;background:#e62429;
+  mix-blend-mode:multiply;opacity:0}
+/* absolutely placed: a 180vmax-wide grid item would widen the grid and push everything off-centre */
+.intro-beam{position:absolute;left:50%;top:50%;z-index:4;width:180vmax;height:8px;margin:-4px 0 0 -90vmax;
+  border-radius:8px;opacity:0;
+  background:linear-gradient(90deg,#4ea6ff,#a678ff,#ffc23d,#3ddc97,#ff77c2,#ff5347);
+  transform:rotate(-16deg) scaleX(0)}
+.intro-beam.glow{height:46px;margin-top:-23px;filter:blur(18px)}
+.intro-logo{position:relative;z-index:5;opacity:0;pointer-events:none}
+.intro-logo span{display:inline-block;background:#e62429;color:#fff;font-weight:700;
+  text-transform:uppercase;letter-spacing:-.035em;line-height:1;white-space:nowrap;
+  font-size:clamp(30px,8.6vw,84px);padding:.1em .2em .06em;transform:scaleY(1.22);
+  box-shadow:0 0 60px rgba(230,36,41,.45)}
+.intro-hint{align-self:end;margin-bottom:max(18px,env(safe-area-inset-bottom));z-index:6;
+  color:rgba(214,228,255,.38);font-size:12px;letter-spacing:.14em;text-transform:uppercase}
+@media (prefers-reduced-motion:reduce){ #intro{display:none} }
