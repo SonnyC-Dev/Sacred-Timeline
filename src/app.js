@@ -53,23 +53,29 @@ let state = {watched:{}, extra:{}, hidden:{}, sort:"release", show:"all", series
 /*ARTWORK*/
 
 /* ============================ INTRO ============================
-   Start-up sequence over #intro: posters turn like comic pages, a Bifröst beam
-   sweeps across, the title lands, then it fades into the app. Runs before
-   load() so there is no flash of the page underneath. INTRO.done resolves when
-   it has finished (or was skipped) — the masthead decode waits for it, so that
-   plays while the title is actually on screen.
+   Start-up sequence over #intro, about 4s:
+     1. comic flip — posters turn off a page stack on a left hinge, with curl
+        shading, a camera push-in, a drifting wall of comic panels behind and two
+        red flashes at top speed (spaced >400ms apart: under 3 flashes a second)
+     2. punch-through — the book rushes at the camera as a Bifröst beam strikes
+     3. title card — red panel wipes open, words rise in, a sheen crosses it
+     4. landing — the card flies into the real page title while the backdrop
+        dissolves; the masthead decode then plays on the real title
+   Runs before load() so the page never flashes underneath. INTRO.done resolves
+   when it has finished or been skipped.
    Skipped: reduced motion, Effects off (checked after load), or already played
-   in this tab. Tap / any key skips it. Built-in posters only: they are embedded
-   (data:) or project files (assets/), so it never needs the network. */
+   in this tab. Tap / any key skips. Built-in posters only — embedded (data:) or
+   project files (assets/) — so it never needs the network. */
 const INTRO=(()=>{
   const el=document.getElementById("intro");
+  const title=document.querySelector(".title");
   let finish, ended=false;
   const done=new Promise(r=>finish=r);
+  const showTitle=()=>{ if(title) title.style.opacity=""; };
   const end=fast=>{
     if(ended) return; ended=true;
-    if(el){ if(fast) el.style.transition="opacity .25s ease, visibility 0s .25s"; el.classList.add("gone");
-            setTimeout(()=>el.remove(),fast?300:700); }
-    setTimeout(finish,fast?0:450);               /* let the fade mostly clear before the title decodes */
+    if(el){ el.classList.add("gone"); setTimeout(()=>el.remove(),fast?400:450); }
+    showTitle(); finish();
   };
   let seen=false;
   try{ seen=!!sessionStorage.getItem("mcu-intro"); sessionStorage.setItem("mcu-intro","1"); }catch(e){}
@@ -77,16 +83,25 @@ const INTRO=(()=>{
     if(el) el.remove(); finish(); return {done, skip:()=>{}};
   }
   el.classList.add("run");                      /* the script has it: cancel the CSS failsafe */
-  const safety=setTimeout(()=>end(true),7000);
+  if(title) title.style.opacity="0";            /* the card lands here later */
+  const safety=setTimeout(()=>end(true),8000);
   ["pointerdown","keydown"].forEach(t=>addEventListener(t,()=>end(true),{once:true,capture:true}));
+  /* a hidden tab pauses animations but not timers, which would desync the
+     sequence: if the page is hidden once the intro is under way, just end it */
+  let started=false;
+  document.addEventListener("visibilitychange",()=>{ if(started && document.hidden) end(true); });
 
   const pics=Object.values(BUILTIN_ART).map(a=>a.p).filter(p=>/^(data:|assets\/)/.test(p||""));
   for(let i=pics.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pics[i],pics[j]]=[pics[j],pics[i]]; }
-  const deck=pics.slice(0,24);
+  const deck=pics.slice(0,22);
   const wait=ms=>new Promise(r=>setTimeout(r,ms));
-  const stage=el.querySelector(".intro-stage"), card=el.querySelector(".intro-card"),
-        tint=el.querySelector(".intro-tint"), beams=[...el.querySelectorAll(".intro-beam")],
-        logo=el.querySelector(".intro-logo");
+  const $i=s=>el.querySelector(s);
+  const bg=$i(".intro-bg"), panels=$i(".intro-panels"), dots=$i(".intro-dots"), stage=$i(".intro-stage"),
+        card=$i(".intro-card"), tint=$i(".intro-tint"), flash=$i(".intro-flash"),
+        beams=[...el.querySelectorAll(".intro-beam")], logo=$i(".intro-logo"),
+        word=$i(".intro-logo b"), hint=$i(".intro-hint");
+  /* the panel wall reuses the rest of the posters: 8 x 5 cells */
+  pics.slice(22).concat(pics).slice(0,40).forEach(p=>{ const i=new Image(); i.src=p; i.alt=""; i.decoding="async"; panels.appendChild(i); });
 
   (async()=>{
     /* decode the first few up front so the opening turns don't stutter */
@@ -94,42 +109,91 @@ const INTRO=(()=>{
     /* claude.ai may keep the frame hidden while it loads; start when it can be seen */
     if(document.visibilityState!=="visible")
       await new Promise(r=>document.addEventListener("visibilitychange",function v(){ if(document.visibilityState==="visible"){ document.removeEventListener("visibilitychange",v); r(); } }));
-    await wait(150);
+    await wait(120);
     if(ended || !deck.length) return end(true);
+    started=true;
 
-    /* 1. the flip: each poster turns away on a left hinge, revealing the next.
-          Gaps run slow -> fast -> slow, about 1.5s in all. */
+    /* 1. the flip */
     card.src=deck[0];
-    stage.animate([{transform:"scale(.86)",opacity:0},{transform:"scale(1)",opacity:1}],{duration:260,easing:"ease-out"});
-    await wait(260);
+    panels.animate([{opacity:0,transform:"translate(-50%,-50%) rotate(-8deg) scale(1.08)"},
+                    {opacity:.2,transform:"translate(-46%,-52%) rotate(-8deg) scale(1)",offset:.35},
+                    {opacity:.12,transform:"translate(-40%,-55%) rotate(-8deg) scale(.96)"}],
+                   {duration:3200,easing:"linear",fill:"forwards"});
+    dots.animate([{opacity:0},{opacity:.55}],{duration:900,fill:"forwards"});
+    stage.animate([{transform:"translateY(40px) rotateX(28deg) scale(.7)",opacity:0},
+                   {transform:"none",opacity:1}],{duration:320,easing:"cubic-bezier(.2,.8,.3,1)"});
+    await wait(300);
+    let flipTotal=0; const gaps=[];
+    for(let i=1;i<deck.length;i++){ const k=i/(deck.length-1); gaps.push(Math.round(38+82*Math.pow(Math.abs(k-.45)*1.65,1.5))); }
+    gaps.forEach(g=>flipTotal+=g);
+    /* the camera: a slow push-in and swing across the whole flip */
+    stage.animate([{transform:"scale(.94) rotateY(-10deg) rotateX(6deg)"},{transform:"scale(1.12) rotateY(7deg) rotateX(-3deg)"}],
+                  {duration:flipTotal+120,easing:"ease-in-out",fill:"forwards"});
+    const flashAt=new Set([Math.round(deck.length*.38),Math.round(deck.length*.72)]);
     for(let i=1;i<deck.length && !ended;i++){
-      const k=i/(deck.length-1), gap=Math.round(40+80*Math.pow(Math.abs(k-.42)*1.7,1.6));
-      const turn=document.createElement("img"); turn.className="intro-turn"; turn.src=card.src; turn.alt="";
+      const gap=gaps[i-1];
+      const turn=document.createElement("div"); turn.className="intro-turn";
+      turn.innerHTML='<img alt=""><i></i>'; turn.firstChild.src=card.src;
       stage.insertBefore(turn,tint);
       card.src=deck[i];
-      turn.animate([{transform:"rotateY(0deg)",filter:"brightness(1)"},{transform:"rotateY(-112deg)",filter:"brightness(1.7)"}],
-                   {duration:Math.max(90,gap*1.8),easing:"cubic-bezier(.4,.1,.6,1)",fill:"forwards"}).finished.then(()=>turn.remove(),()=>{});
+      const dur=Math.max(110,gap*2);
+      turn.animate([{transform:"rotateY(0deg)"},{transform:"rotateY(-118deg)"}],
+                   {duration:dur,easing:"cubic-bezier(.45,.05,.55,.95)",fill:"forwards"}).finished.then(()=>turn.remove(),()=>{});
+      turn.lastChild.animate([{opacity:0},{opacity:.9}],{duration:dur,fill:"forwards"});
+      if(gap<50) card.animate([{filter:"brightness(1.35) contrast(1.1)"},{filter:"none"}],{duration:gap*2});
+      if(flashAt.has(i)) flash.animate([{opacity:0},{opacity:.42},{opacity:0}],{duration:110});
       await wait(gap);
     }
     if(ended) return;
 
-    /* 2. the Bifröst: beam sweeps across, the poster sinks under a red wash */
-    tint.animate([{opacity:0},{opacity:.72}],{duration:500,fill:"forwards"});
-    card.animate([{opacity:1,transform:"scale(1)"},{opacity:.32,transform:"scale(.94)"}],{duration:700,easing:"ease-out",fill:"forwards"});
+    /* 2. punch-through: the book rushes the camera as the Bifröst strikes */
+    hint.animate([{opacity:1},{opacity:0}],{duration:300,fill:"forwards"});
+    stage.animate([{transform:"scale(1.12) rotateY(7deg)",opacity:1,filter:"blur(0)"},
+                   {transform:"scale(3.4) rotateY(0deg)",opacity:0,filter:"blur(10px)"}],
+                  {duration:520,easing:"cubic-bezier(.6,0,.9,.5)",fill:"forwards"});
+    tint.animate([{opacity:0},{opacity:.6}],{duration:300,fill:"forwards"});
+    panels.animate([{opacity:.12},{opacity:0}],{duration:600,fill:"forwards"});
     beams.forEach((b,i)=>b.animate([
       {opacity:0,transform:"rotate(-16deg) scaleX(0)",transformOrigin:"0 50%"},
-      {opacity:i?.75:1,transform:"rotate(-16deg) scaleX(1)",transformOrigin:"0 50%",offset:.45},
-      {opacity:0,transform:"rotate(-16deg) scaleX(1) scaleY(.2)",transformOrigin:"0 50%"}],
-      {duration:900,easing:"cubic-bezier(.2,.7,.2,1)",fill:"forwards"}));
+      {opacity:i?.8:1,transform:"rotate(-16deg) scaleX(1)",transformOrigin:"0 50%",offset:.4},
+      {opacity:0,transform:"rotate(-16deg) scaleX(1) scaleY(.15)",transformOrigin:"0 50%"}],
+      {duration:950,easing:"cubic-bezier(.2,.7,.2,1)",fill:"forwards"}));
     await wait(330);
+    flash.style.background="#fff";
+    flash.animate([{opacity:0},{opacity:.35},{opacity:0}],{duration:260});
 
-    /* 3. the title lands, holds, and the intro fades into the app */
-    logo.animate([{opacity:0,transform:"scale(1.45)",filter:"blur(6px)"},{opacity:1,transform:"scale(1)",filter:"blur(0)"}],
-                 {duration:380,easing:"cubic-bezier(.2,.9,.3,1.15)",fill:"forwards"});
-    await wait(850);
+    /* 3. the title card: panel wipes open from the centre, words rise into it */
+    logo.style.opacity="1";
+    const span=logo.firstElementChild;
+    span.animate([{transform:"scaleX(0)"},{transform:"scaleX(1.04)",offset:.75},{transform:"scaleX(1)"}],
+                 {duration:340,easing:"cubic-bezier(.2,.9,.3,1)"});
+    word.animate([{transform:"translateY(110%) scaleY(1.22)",opacity:0},{transform:"translateY(0) scaleY(1.22)",opacity:1}],
+                 {duration:380,delay:130,easing:"cubic-bezier(.2,.9,.3,1.1)",fill:"backwards"});
+    logo.classList.add("on");                    /* starts the sheen */
+    await wait(1100);
+    if(ended) return;
+
+    /* 4. landing: fly the card into the real page title, dissolve the backdrop */
     clearTimeout(safety);
+    [bg,dots,tint,flash].forEach(x=>x.animate([{opacity:getComputedStyle(x).opacity},{opacity:0}],{duration:520,fill:"forwards"}));
+    /* measure the wrapper, not the span: the span's own wipe animation would skew it */
+    const to=title&&title.getBoundingClientRect(), from=logo.getBoundingClientRect();
+    const onScreen=to && to.bottom>0 && to.top<innerHeight && to.width>0;
+    if(onScreen){
+      const s=to.height/from.height;
+      const dx=to.left-from.left, dy=(to.top+to.height/2)-(from.top+from.height/2);
+      logo.animate([{transform:"none"},{transform:`translate(${dx}px,${dy}px) scale(${s})`}],
+                   {duration:640,easing:"cubic-bezier(.65,0,.25,1)",fill:"forwards"});
+      span.animate([{backgroundColor:"#e62429",boxShadow:"0 0 60px rgba(230,36,41,.45)"},
+                    {backgroundColor:"rgba(230,36,41,0)",boxShadow:"0 0 0 rgba(230,36,41,0)"}],
+                   {duration:640,easing:"ease-in",fill:"forwards"});
+      await wait(560);
+    } else {
+      await wait(300);
+    }
+    logo.style.visibility="hidden";            /* the real title takes over in the same frame */
     end(false);
-    if(window.__bifrost) setTimeout(()=>window.__bifrost(),200);   /* hand-off beam over the stars */
+    if(window.__bifrost) setTimeout(()=>window.__bifrost(),120);   /* hand-off beam over the stars */
   })().catch(()=>end(true));
 
   return {done, skip:()=>end(true)};
