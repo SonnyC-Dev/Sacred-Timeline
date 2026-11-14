@@ -1,0 +1,17 @@
+# Keys and anything else local: never commit these.
+# Git keeps secrets in history even after deletion, so regenerating a leaked
+# key is usually easier than rewriting history.
+config.local.js
+*.local.js
+*.local.json
+.env
+.env.*
+
+# Working files
+node_modules/
+__pycache__/
+.DS_Store
+
+# Build output — rebuild it with build.py instead of committing 2.4MB
+dist/
+mcu-tracker.build.html
