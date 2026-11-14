@@ -48,7 +48,8 @@ let state = {watched:{}, extra:{}, hidden:{}, sort:"release", show:"all", series
    Fill from an exported backup's "meta" section. */
 /* Artwork, runtimes and episode counts. Kept inline rather than in a separate
    data block: some hosts strip non-JS script tags, which silently killed the
-   whole page. split.py reads it out via the markers below. */
+   whole page. In src/ the placeholder below stays empty and dev-loader.js
+   supplies the data; build.ps1 / build.py write it in for the single file. */
 /*ARTWORK*/
 
 let meta = {};   /* id -> {p:poster path or url, min, ep, epmin} */

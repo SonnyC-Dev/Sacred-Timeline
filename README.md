@@ -10,9 +10,9 @@ Hosted copy: https://claude.ai/artifact/JGoSWpQjedarHP2GbKkHEr
 
 ## Project layout
 
-**`src/` is the master copy. Edit there only.** The split has been done once
-and is finished: `split.py` / `split.ps1` are kept for history, and running
-either into `src/` would overwrite your edits.
+**`src/` is the master copy. Edit there only.** It was split out of the
+original single file once; the split scripts have been removed (they are in
+git history) because re-running them would overwrite edits in `src/`.
 
 This machine has no Python, so each script has a PowerShell twin:
 
