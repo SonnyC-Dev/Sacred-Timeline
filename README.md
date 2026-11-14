@@ -4,7 +4,13 @@ A personal Marvel watch tracker. 62 films and series, six orderings, watch
 history, ratings, stats. One self-contained HTML file — no build step, no
 dependencies, no network.
 
-Hosted copy: https://claude.ai/artifact/JGoSWpQjedarHP2GbKkHEr
+Live site: https://sonnyc-dev.github.io/Sacred-Timeline/ — published from
+`src/` by `.github/workflows/pages.yml` on every push to `main` (GitHub Pages,
+Source: GitHub Actions). Takes a minute or two after a push.
+
+Older hosted copies (claude.ai, private; downloads don't work there):
+https://claude.ai/artifact/JGoSWpQjedarHP2GbKkHEr (original) and
+https://claude.ai/artifact/VUQWaRLbghdnQguh5FkbZG (with the intro).
 
 ---
 
