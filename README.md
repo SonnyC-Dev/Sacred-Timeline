@@ -108,6 +108,28 @@ covering `config.local.js` and `*.local.*` is in place. If a key ever does get
 committed, rewriting history is awkward — regenerating the key on themoviedb.org
 is free and takes a minute, so do that instead.
 
+## Sync between devices (GitHub Gist)
+
+Settings → Sync between devices. Optional; each device connects once with a
+**tracker name** and a **GitHub fine-grained token** whose only permission is
+Account → Gists: Read and write.
+
+- Each tracker name is its own **secret** Gist on that account, described
+  "Sacred Timeline sync — <name>". Two people can share one account and keep
+  separate trackers by using different names. Secret means unlisted, not
+  private: anyone with the Gist's URL can read it.
+- Synced: watched (with dates), ratings, notes, episode progress, hidden titles.
+  Not synced: artwork and display preferences, which stay per device.
+- Merge is per title: `save()` records when each title last changed (removals
+  too) and the newer change wins on both sides. Data from before sync was
+  switched on keeps the device's version and adds titles only the Gist has.
+- Syncs on opening, about 2.5s after a change, when the app comes back into
+  view, and when it is hidden with changes pending.
+- The token is stored in the browser (`mcu-sync:v1`) and nowhere else: not in
+  backups, progress codes or this repo. "Stop syncing on this device" erases it.
+- If a token leaks, revoke it on GitHub (Settings → Developer settings) and
+  make a new one; the Gists are unaffected.
+
 ## Still to do
 
 - **Regenerate the TMDB key.** The original was pasted into a chat and shipped

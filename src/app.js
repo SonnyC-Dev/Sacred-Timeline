@@ -401,6 +401,7 @@ async function load(){
 }
 let t1,t2;
 function save(){
+  SYNC.noteChange();                           /* records which titles changed, for sync */
   clearTimeout(t1); t1=setTimeout(async()=>{
     try{ await store.set(KEY, JSON.stringify({watched:state.watched,extra:state.extra,hidden:state.hidden,sort:state.sort,show:state.show,
       series:state.series,tmdb:state.tmdb,liveSearch:state.liveSearch,
@@ -411,6 +412,173 @@ function save(){
 function saveMeta(){
   clearTimeout(t2); t2=setTimeout(async()=>{ try{ await store.set(MKEY, JSON.stringify(meta)); }catch(e){} },900);
 }
+
+/* ---------- sync between devices (GitHub Gist) ----------
+   Optional. Given a GitHub token allowed to read and write Gists, this browser
+   keeps the tracker in a secret Gist on that account: one Gist per tracker
+   name, so two people can share an account and keep separate trackers.
+   Synced: watched, extra (ratings, notes, episodes), hidden. Not synced:
+   artwork and display preferences, which belong to each device.
+   Merging is per title. Every save() records which titles changed and when
+   (removals included); on sync, the newer change to each title wins on both
+   sides. If neither side has a record (data from before sync was switched
+   on), the device's own version is kept and titles only one side has are
+   added. The token stays in this browser: never in backups, progress codes
+   or the project. */
+const SYNC=(()=>{
+  const SKEY="mcu-sync:v1", API="https://api.github.com", FILE="sacred-timeline.json",
+        PARTS=["watched","extra","hidden"];
+  let cfg=null;                                  /* {token, name, gist, stamps, last} */
+  let snap={}, pushT=null, busy=false, again=false, status="";
+  const k=(p,id)=>p+":"+id;
+  const snapshot=()=>{ const s={}; PARTS.forEach(p=>{ for(const id in state[p]) s[k(p,id)]=JSON.stringify(state[p][id]); }); return s; };
+  const persist=()=>store.set(SKEY,cfg?JSON.stringify(cfg):"").catch(()=>{});
+  const desc=n=>`Sacred Timeline sync — ${n}`;
+  const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"})[c]);
+
+  async function gh(path,opt={}){
+    const r=await fetch(API+path,{...opt,cache:"no-store",headers:{Accept:"application/vnd.github+json",
+      Authorization:`Bearer ${cfg.token}`,"X-GitHub-Api-Version":"2022-11-28"}});
+    if(r.status===401) throw new Error("token");
+    if(r.status===404) throw new Error("missing");
+    if(r.status===403) throw new Error(r.headers.get("x-ratelimit-remaining")==="0"?"busy":"permission");
+    if(!r.ok) throw new Error("net");
+    return r.json();
+  }
+  const body=()=>JSON.stringify({app:"sacred-timeline",v:1,saved:new Date().toISOString(),
+    watched:state.watched,extra:state.extra,hidden:state.hidden,stamps:cfg.stamps});
+  const write=()=>gh(`/gists/${cfg.gist}`,{method:"PATCH",body:JSON.stringify({files:{[FILE]:{content:body()}}})});
+
+  async function findOrCreate(){
+    for(let page=1;page<=5;page++){
+      const list=await gh(`/gists?per_page=100&page=${page}`);
+      const hit=list.find(g=>g.description===desc(cfg.name) && g.files && g.files[FILE]);
+      if(hit) return hit.id;
+      if(list.length<100) break;
+    }
+    return (await gh("/gists",{method:"POST",body:JSON.stringify({description:desc(cfg.name),public:false,
+      files:{[FILE]:{content:body()}}})})).id;
+  }
+
+  /* per title: the newer change wins; returns which sides need updating */
+  function merge(remote){
+    const rs=remote.stamps||{}, ls=cfg.stamps, keys=new Set([...Object.keys(rs),...Object.keys(ls)]);
+    PARTS.forEach(p=>{ Object.keys(remote[p]||{}).forEach(id=>keys.add(k(p,id))); Object.keys(state[p]).forEach(id=>keys.add(k(p,id))); });
+    let local=false, out=false;
+    for(const key of keys){
+      const i=key.indexOf(":"), p=key.slice(0,i), id=key.slice(i+1);
+      if(!PARTS.includes(p)) continue;
+      const lt=ls[key]||0, rt=rs[key]||0, lv=state[p][id], rv=(remote[p]||{})[id];
+      if(JSON.stringify(lv)===JSON.stringify(rv)){ if(rt>lt) ls[key]=rt; continue; }
+      if(rt>lt || (rt===lt && lv===undefined)){
+        if(rv===undefined) delete state[p][id]; else state[p][id]=rv;
+        if(rt) ls[key]=rt; else delete ls[key];
+        local=true;
+      } else out=true;
+    }
+    return {local,out};
+  }
+
+  async function sync(){
+    if(!cfg) return;
+    if(busy){ again=true; return; }
+    busy=true; clearTimeout(pushT); show("Syncing…");
+    try{
+      if(!cfg.gist){ cfg.gist=await findOrCreate(); await persist(); }
+      const f=((await gh(`/gists/${cfg.gist}`)).files||{})[FILE];
+      const remote=f ? JSON.parse(f.truncated ? await (await fetch(f.raw_url,{cache:"no-store"})).text() : f.content||"{}") : {};
+      const {local,out}=merge(remote);
+      if(local){ snap=snapshot(); save(); render(true); renderStats(); renderSettings(); }
+      if(out || !f) await write();
+      cfg.last=Date.now(); await persist(); show();
+    }catch(e){
+      if(e.message==="missing" && cfg.gist){ cfg.gist=null; await persist(); again=true; return; }   /* Gist deleted: make a new one */
+      show({token:"GitHub didn’t accept the token. Check it and connect again.",
+            permission:"The token can’t use Gists. It needs Gists: read and write.",
+            busy:"GitHub is limiting requests right now. It will try again later."}[e.message]
+           || "Couldn’t reach GitHub. Changes are kept here and will sync later.");
+    }finally{ busy=false; if(again){ again=false; sync(); } }
+  }
+
+  /* called by save(): note which titles changed, then sync shortly after */
+  function noteChange(){
+    const cur=snapshot();
+    if(cfg){
+      const now=Date.now();
+      for(const key in cur) if(cur[key]!==snap[key]) cfg.stamps[key]=now;
+      for(const key in snap) if(!(key in cur)) cfg.stamps[key]=now;
+      persist(); clearTimeout(pushT); pushT=setTimeout(sync,2500);
+    }
+    snap=cur;
+  }
+
+  function ago(t){
+    const s=Math.round((Date.now()-t)/1000);
+    return s<45?"just now":s<5400?`${Math.max(1,Math.round(s/60))} min ago`:new Date(t).toLocaleString("en-GB",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
+  }
+  function show(msg){
+    status=msg || (cfg&&cfg.last?`Synced ${ago(cfg.last)}.`:"");
+    const el=document.getElementById("syncStatus"); if(el) el.textContent=status;
+  }
+
+  /* after a while away, pull on return; send anything pending when leaving */
+  document.addEventListener("visibilitychange",()=>{
+    if(!cfg) return;
+    if(document.hidden){ if(pushT){ clearTimeout(pushT); sync(); } }
+    else if(Date.now()-(cfg.last||0)>20000) sync();
+  });
+
+  return {
+    async init(){
+      try{ const r=await store.get(SKEY); if(r&&r.value) cfg=JSON.parse(r.value); }catch(e){}
+      snap=snapshot();
+      if(cfg){ show(); sync(); }
+    },
+    noteChange,
+    async connect(token,name){
+      cfg={token:token.trim(),name:name.trim()||"Me",gist:null,stamps:{},last:0};
+      await persist(); await sync();
+      if(!cfg.last){ cfg=null; await persist(); }        /* it didn't work: forget the token again */
+      renderSettings(); show(status);
+    },
+    async disconnect(){ cfg=null; clearTimeout(pushT); await persist(); status=""; renderSettings(); },
+    now:sync,
+    card(){
+      if(cfg) return `
+        <p id="syncStatus">${esc(status||"Syncing…")}</p>
+        <div class="artrow">
+          <button class="btn primary" id="syncNow">Sync now</button>
+          <button class="btn" id="syncOff">Stop syncing on this device</button>
+          <span style="color:var(--ink-faint);font-size:11.5px;flex:1 1 220px;line-height:1.5">Tracker “${esc(cfg.name)}”. Watched titles, ratings, notes, episodes and hidden titles sync; artwork and display settings stay with each device.</span>
+        </div>`;
+      return `
+        <p id="syncStatus">${esc(status)||"Keep this tracker the same on every device. It is saved in a secret Gist on your GitHub account."}</p>
+        <div class="artrow">
+          <input type="text" id="syncName" placeholder="Tracker name, e.g. Me or Mum" autocomplete="off" maxlength="40">
+          <input type="password" id="syncToken" placeholder="GitHub token" autocomplete="off">
+          <button class="btn primary" id="syncOn">Connect</button>
+        </div>
+        <details class="pasteart">
+          <summary>How to get a token</summary>
+          <p>On github.com: your picture → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token. Give it a name, choose an expiry, then under Account permissions set <em>Gists</em> to <em>Read and write</em>. Generate it, copy it, and paste it above.</p>
+          <p style="margin-top:8px">Use the same tracker name on each of your devices. Someone else using the same account picks a different name and gets a separate tracker. The token is kept in this browser only.</p>
+        </details>`;
+    },
+    wire(){
+      const on=$("#syncOn"), now=$("#syncNow"), off=$("#syncOff");
+      if(on) on.addEventListener("click",()=>{
+        const t=$("#syncToken").value, n=$("#syncName").value;
+        if(!t.trim()){ toast("Paste a GitHub token first."); return; }
+        on.disabled=true; on.textContent="Connecting…";
+        SYNC.connect(t,n);
+      });
+      if(now) now.addEventListener("click",()=>sync());
+      if(off) off.addEventListener("click",()=>{
+        if(confirm("Stop syncing on this device? Your progress stays here and in the Gist; this device just stops updating it.")) SYNC.disconnect();
+      });
+    }
+  };
+})();
 
 /* ---------- length ---------- */
 function hhmm(min){
@@ -1690,6 +1858,12 @@ function renderSettings(){
       <span class="ticks"></span>
     </div>
 
+    <div class="card wide hudframe" style="animation-delay:.4s">
+      <h3>Sync between devices</h3>
+      <div class="prefs">${SYNC.card()}</div>
+      <span class="ticks"></span>
+    </div>
+
     <div class="card wide hudframe" style="animation-delay:.43s">
       <h3>Your data</h3>
       <div class="prefs">
@@ -1715,6 +1889,7 @@ function renderSettings(){
       <span class="ticks"></span>
     </div>
   </div>`;
+  SYNC.wire();
   $("#live").addEventListener("change",e=>{
     state.liveSearch=e.target.checked; save(); searchMode();
     toast(state.liveSearch?"Search now runs as you type.":"Search now runs on Enter.");
@@ -2602,6 +2777,7 @@ addEventListener("error",e=>{ if(!document.querySelector("li.entry")) bootFailed
   applyTheme(state.phase||1);
   render(); syncStick(); searchMode(); applyPrefs();
   INTRO.ready();                               /* list is built: the intro may start its flip */
+  SYNC.init();                                 /* pull from the Gist if this device syncs */
   INTRO.done.then(decodeTitle);                /* decode once the title is actually visible */
   if(r.title){
     openIds.add(r.title); render();
