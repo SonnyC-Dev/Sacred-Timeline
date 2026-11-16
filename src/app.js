@@ -28,9 +28,6 @@ DATA.slice().sort((a,b)=>a.c-b.c).forEach((m,i)=>POS[m.id].chr=i+1);
 const BY_ID = Object.fromEntries(DATA.map(m=>[m.id,m]));
 
 /* ============================ STATE ============================ */
-/* Built-in TMDB key. It sits in this file’s source, so anyone you share the
-   file with can read it — clear it in the Artwork panel before sharing, or
-   regenerate it on themoviedb.org if it ever leaks somewhere it shouldn’t. */
 /* No key ships in this file, so it is safe to commit and to host publicly.
    Artwork, runtimes and episode counts are all embedded already — a key is
    only needed to fetch newly added titles. Paste one in Settings → Artwork
@@ -53,252 +50,281 @@ let state = {watched:{}, extra:{}, hidden:{}, sort:"release", show:"all", series
 /*ARTWORK*/
 
 /* ============================ INTRO ============================
-   Start-up sequence over #intro, about 7-8s:
-     0. pre-roll — waits (up to ~3s) until the flip posters are downloaded AND
-        decoded, and until the app has built its list underneath, so neither
-        blank pages nor a busy main thread spoil the flip
-     1. comic flip — posters turn off a page stack on a left hinge, with curl
-        shading, a camera push-in, a dim wall of comic panels behind and two red
-        flashes at top speed (spaced >400ms apart: under 3 flashes a second)
-     2. punch-through — the book rushes at the camera as a Bifröst beam strikes
-     3. title card — red panel wipes open, words rise in, a sheen crosses it
-     4. landing — the card arcs up into the page title while cross-fading into
-        an exact copy of it; the page fades up around it; the copy then hands
-        over to the real title invisibly and the masthead decode plays on it
-   Every step waits for its animation to actually finish (not a timer), so a
-   busy phone can slow it down but never knock it out of step.
-   Only cheap effects (transform, opacity) run while things move: no animated
-   blur or filters, which stutter on phones.
-   Skipped: reduced motion, Effects off (checked after load), already played in
-   this tab, or the CSS failsafe already fired. Tap / any key skips. Built-in
-   posters only — embedded (data:) or project files (assets/) — no network. */
+   A comic you open, over #intro:
+     cover    — a comic cover (first poster + "SACRED TIMELINE" masthead) floats
+                over a drifting wall of poster panels until a tap, click, Enter
+                or Space opens it. Posters keep loading while it waits, so by
+                the time it opens the flip is ready: no blank pages.
+     flip     — the cover and pages turn on a left hinge with a slight paper
+                bend, a camera push-in and two red flashes at top speed (spaced
+                >400ms apart: under 3 flashes a second)
+     title    — the last page reveals the comic's red title page; the camera
+                levels, then pushes in until the printed title IS the title card
+                while a Bifröst beam sweeps across
+     landing  — the card arcs up into the page title, carrying an exact copy of
+                it that cross-fades in, so it lands invisibly; the page ripples
+                in around it and the masthead decode plays on the real title
+   Every step waits for its animation to finish, never a timer, so a busy phone
+   can slow it down but not knock it out of step. Only transform and opacity
+   animate. Once running, any tap or key skips; Esc skips from the cover.
+   Not shown: reduced motion, Effects off, already played in this tab, or the
+   CSS failsafe already fired. Built-in posters only, so no network needed. */
 const INTRO=(()=>{
-  const el=document.getElementById("intro");
-  const title=document.querySelector(".title");
-  let finish, ended=false, appReady, started=false;
-  const done=new Promise(r=>finish=r);
-  const ready=new Promise(r=>appReady=r);
-  const showTitle=()=>{ if(title) title.style.opacity=""; };
-  const reveal=[];                               /* page fade-up animations, cancelled on skip */
+  const el=document.getElementById("intro"), title=document.querySelector(".title");
+  let finish, appReady, ended=false, running=false, openedAt=0;
+  const done=new Promise(r=>finish=r), ready=new Promise(r=>appReady=r);
+  const reveal=[];                               /* page fade-ups, finished at once on skip */
   const end=fast=>{
     if(ended) return; ended=true;
+    removeEventListener("pointerdown",onInput,true); removeEventListener("keydown",onInput,true);
     reveal.forEach(a=>{ try{ a.finish(); }catch(e){} });
     if(el){ el.classList.add("gone"); setTimeout(()=>el.remove(),fast?400:450); }
-    showTitle(); finish();
+    if(title) title.style.opacity="";
+    finish();
   };
   let seen=false;
   try{ seen=!!sessionStorage.getItem("mcu-intro"); sessionStorage.setItem("mcu-intro","1"); }catch(e){}
-  const failsafeFired=el && getComputedStyle(el).visibility==="hidden";
-  if(!el || seen || failsafeFired || matchMedia("(prefers-reduced-motion: reduce)").matches || typeof Element.prototype.animate!=="function"){
+  if(!el || seen || getComputedStyle(el).visibility==="hidden" ||
+     matchMedia("(prefers-reduced-motion: reduce)").matches || typeof el.animate!=="function"){
     if(el) el.remove(); finish(); return {done, skip:()=>{}, ready:()=>{}};
   }
   el.classList.add("run");                      /* the script has it: cancel the CSS failsafe */
   if(title) title.style.opacity="0";            /* the card lands here later */
-  const safety=setTimeout(()=>end(true),20000);
-  ["pointerdown","keydown"].forEach(t=>addEventListener(t,()=>end(true),{once:true,capture:true}));
-  /* a hidden tab pauses animations, so their "finished" never arrives: end it */
-  document.addEventListener("visibilitychange",()=>{ if(started && document.hidden) end(true); });
 
+  /* before opening: tap / click / Enter / Space opens, Esc skips.
+     once running: any tap or key skips (after a moment, so the opening tap can't) */
+  let open; const opened=new Promise(r=>open=r);
+  function onInput(e){
+    if(running){ if(performance.now()-openedAt>500) end(true); return; }
+    if(e.type==="keydown"){
+      if(e.key==="Escape") return end(true);
+      if(e.key!=="Enter" && e.key!==" ") return;
+      e.preventDefault();
+    }
+    open();
+  }
+  addEventListener("pointerdown",onInput,true); addEventListener("keydown",onInput,true);
+  /* a hidden tab pauses animations, so their "finished" never arrives: end it */
+  document.addEventListener("visibilitychange",()=>{ if(running && document.hidden) end(true); });
+
+  const $i=s=>el.querySelector(s);
+  const bg=$i(".intro-bg"), panels=$i(".intro-panels"), dots=$i(".intro-dots"), stage=$i(".intro-stage"),
+        card=$i(".intro-card"), flash=$i(".intro-flash"), beams=[...el.querySelectorAll(".intro-beam")],
+        logo=$i(".intro-logo"), span=logo.firstElementChild, word=logo.querySelector("b"), hint=$i(".intro-hint");
+  const wait=ms=>new Promise(r=>setTimeout(r,ms));
+  const fin=a=>a.finished.catch(()=>{});        /* a cancelled animation counts as done */
   const phone=innerWidth<=620;
   const pics=Object.values(BUILTIN_ART).map(a=>a.p).filter(p=>/^(data:|assets\/)/.test(p||""));
   for(let i=pics.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pics[i],pics[j]]=[pics[j],pics[i]]; }
-  const wait=ms=>new Promise(r=>setTimeout(r,ms));
-  const fin=a=>a.finished.catch(()=>{});        /* a cancelled animation counts as done */
-  const $i=s=>el.querySelector(s);
-  const bg=$i(".intro-bg"), panels=$i(".intro-panels"), dots=$i(".intro-dots"), stage=$i(".intro-stage"),
-        card=$i(".intro-card"), tint=$i(".intro-tint"), flash=$i(".intro-flash"),
-        beams=[...el.querySelectorAll(".intro-beam")], logo=$i(".intro-logo"), span=logo.firstElementChild,
-        word=$i(".intro-logo b"), hint=$i(".intro-hint");
 
-  /* download + decode a poster; resolves with its src, or null if it fails */
+  /* posters: download + decode in batches; the deck keeps filling in the background */
+  const DECK=18, deck=[];
   const prep=p=>{ const i=new Image(); i.decoding="async"; i.src=p; return i.decode().then(()=>p,()=>null); };
+  (async()=>{ for(let k=0;deck.length<DECK && k<pics.length;k+=6)
+    (await Promise.all(pics.slice(k,k+6).map(prep))).forEach(p=>{ if(p && deck.length<DECK) deck.push(p); }); })();
+  const until=(test,ms)=>new Promise(r=>{ const t0=performance.now(), i=setInterval(()=>{
+    if(test()||performance.now()-t0>ms){ clearInterval(i); r(test()); } },50); });
+
+  /* the Bifröst: a rainbow beam (and its glow) sweeping across */
+  const sweep=()=>beams.map((b,i)=>b.animate([
+    {opacity:0,transform:"rotate(-16deg) scaleX(0)",transformOrigin:"0 50%"},
+    {opacity:i?.8:1,transform:"rotate(-16deg) scaleX(1)",transformOrigin:"0 50%",offset:.4},
+    {opacity:0,transform:"rotate(-16deg) scaleX(1) scaleY(.15)",transformOrigin:"0 50%"}],
+    {duration:1250,easing:"cubic-bezier(.2,.7,.2,1)",fill:"forwards"}));
 
   (async()=>{
-    /* 0. pre-roll: the flip deck first, then the panel wall, so the deck isn't
-          competing for a phone's connection */
-    const want=18, budget=3000, t0=performance.now();
-    const deck=[]; let k=0;
-    const fill=async()=>{ while(deck.length<want && k<pics.length && performance.now()-t0<budget){
-      const batch=pics.slice(k,k+6); k+=6;
-      const got=await Promise.race([Promise.all(batch.map(prep)), wait(Math.max(0,budget-(performance.now()-t0)))]);
-      (got||[]).forEach(p=>{ if(p && deck.length<want) deck.push(p); }); } };
-    await fill();
-    /* the panel wall goes in during the pre-roll too, so adding it can't hitch the flip */
-    const wall=pics.filter(p=>!deck.includes(p)).concat(deck).slice(0,phone?18:40);
-    if(phone) panels.style.gridTemplateColumns="repeat(6,1fr)";
-    wall.forEach(p=>{ const i=new Image(); i.src=p; i.alt=""; i.decoding="async"; panels.appendChild(i); });
-    await Promise.race([Promise.all([ready, Promise.allSettled([...panels.querySelectorAll("img")].map(i=>i.decode()))]),
-                        wait(Math.max(400,budget-(performance.now()-t0)))]);
-    if(document.visibilityState!=="visible")
-      await new Promise(r=>document.addEventListener("visibilitychange",function v(){ if(document.visibilityState==="visible"){ document.removeEventListener("visibilitychange",v); r(); } }));
+    /* load: a cover poster plus one page, and the app's list built underneath */
+    if(!await until(()=>deck.length>=2,6000)) return end(true);
+    await Promise.race([ready,wait(3000)]);
     if(ended) return;
-    started=true;
+    const SW=stage.offsetWidth, SH=stage.offsetHeight;
 
     /* a turning page with a gentle bend: three hinged strips, each with its own
-       clipped slice of the poster, so the outer strips can trail a few degrees
-       behind the hinge the way paper flexes. Transforms only. */
-    const SW=stage.offsetWidth, SH=stage.offsetHeight, CUTS=[.56,.26,.18];
-    const makePage=src=>{
+       slice of the image and of one shared shadow, so the outer strips can
+       trail a few degrees behind the hinge the way paper flexes */
+    const CUTS=[.56,.26,.18], EASE_TURN="cubic-bezier(.45,.05,.55,.95)";
+    const turnPage=(src,dur)=>{
       const turn=document.createElement("div"); turn.className="intro-turn";
-      let parent=turn, x=0; const strips=[];
+      const strips=[]; let parent=turn, x=0;
       CUTS.forEach((c,n)=>{
         const st=document.createElement("div"); st.className="intro-strip";
         st.style.cssText=`left:${n?CUTS[n-1]*SW:0}px;width:${c*SW}px`;
-        const face=document.createElement("div"); face.className="intro-face";
-        if(n<CUTS.length-1) face.style.right="-1px";   /* overlap the next strip: no hairline seam */
-        const img=new Image(); img.alt=""; img.src=src;
-        img.style.cssText=`left:${-x}px;width:${SW}px;height:${SH}px`;
-        /* one shadow sweep across the whole page, sliced like the poster, so the
-           strips join without visible creases */
-        const shade=document.createElement("i");
+        st.innerHTML=`<div class="intro-face"${n<CUTS.length-1?' style="right:-1px"':""}><img alt=""><i></i></div>`;
+        const img=st.querySelector("img"), shade=st.querySelector("i");
+        img.src=src; img.style.cssText=`left:${-x}px;width:${SW}px;height:${SH}px`;
         shade.style.cssText=`background-size:${SW}px 100%;background-position:${-x}px 0`;
-        face.append(img,shade); st.appendChild(face); parent.appendChild(st);
-        strips.push(st); parent=st; x+=c*SW;
+        parent.appendChild(st); strips.push(st); parent=st; x+=c*SW;
       });
-      return {turn,strips,shades:[...turn.querySelectorAll(".intro-face i")]};
-    };
-    const turnPage=(src,dur)=>{
-      const {turn,strips,shades}=makePage(src);
-      stage.insertBefore(turn,tint);
-      const ease="cubic-bezier(.45,.05,.55,.95)";
-      const a=turn.animate([{transform:"rotateY(0deg)"},{transform:"rotateY(-118deg)"}],{duration:dur,easing:ease,fill:"forwards"});
-      /* the outer strips lag, then catch up: an ever-so-slight bend */
-      strips[1].animate([{transform:"rotateY(0)"},{transform:"rotateY(8deg)",offset:.4},{transform:"rotateY(3deg)",offset:.75},{transform:"rotateY(0)"}],{duration:dur,easing:ease,fill:"forwards"});
-      strips[2].animate([{transform:"rotateY(0)"},{transform:"rotateY(10deg)",offset:.45},{transform:"rotateY(4deg)",offset:.8},{transform:"rotateY(0)"}],{duration:dur,easing:ease,fill:"forwards"});
-      shades.forEach(s=>s.animate([{opacity:0},{opacity:.5,offset:.5},{opacity:.9}],{duration:dur,fill:"forwards"}));
+      stage.appendChild(turn);
+      const T={duration:dur,easing:EASE_TURN,fill:"forwards"};
+      const a=turn.animate([{transform:"rotateY(0deg)"},{transform:"rotateY(-118deg)"}],T);
+      strips[1].animate([{transform:"rotateY(0)"},{transform:"rotateY(8deg)",offset:.4},{transform:"rotateY(3deg)",offset:.75},{transform:"rotateY(0)"}],T);
+      strips[2].animate([{transform:"rotateY(0)"},{transform:"rotateY(10deg)",offset:.45},{transform:"rotateY(4deg)",offset:.8},{transform:"rotateY(0)"}],T);
+      turn.querySelectorAll(".intro-face i").forEach(s=>s.animate([{opacity:0},{opacity:.5,offset:.5},{opacity:.9}],{duration:dur,fill:"forwards"}));
       fin(a).then(()=>turn.remove());
       return a;
     };
 
-    /* 1. the flip (skipped on a connection too slow to have 6 posters ready) */
-    if(deck.length>=6){
-      card.src=deck[0];
-      panels.animate([{opacity:0,transform:"translate(-50%,-50%) rotate(-8deg) scale(1.08)"},
-                      {opacity:.18,transform:"translate(-46%,-52%) rotate(-8deg) scale(1)",offset:.3},
-                      {opacity:.14,transform:"translate(-40%,-55%) rotate(-8deg) scale(.96)"}],
-                     {duration:7000,easing:"linear",fill:"forwards"});
-      dots.animate([{opacity:0},{opacity:.5}],{duration:1200,fill:"forwards"});
-      await fin(stage.animate([{transform:"translateY(40px) rotateX(28deg) scale(.7)",opacity:0},{transform:"none",opacity:1}],
-                              {duration:520,easing:"cubic-bezier(.2,.8,.3,1)"}));
-      await wait(220);
-      if(ended) return;
-      /* gaps run slow -> fast -> slow */
-      const gaps=[]; for(let i=1;i<deck.length;i++){ const q=i/(deck.length-1); gaps.push(Math.round(92+118*Math.pow(Math.abs(q-.45)*1.65,1.4))); }
-      const flipTotal=gaps.reduce((a,b)=>a+b,0);
-      /* the camera: a slow push-in and swing across the whole flip */
-      stage.animate([{transform:"scale(.94) rotateY(-10deg) rotateX(6deg)"},{transform:"scale(1.06) rotateY(5deg) rotateX(-2deg)"}],
-                    {duration:flipTotal+900,easing:"ease-in-out",fill:"forwards"});
-      const flashAt=new Set([Math.round(deck.length*.4),Math.round(deck.length*.72)]);
-      for(let i=1;i<deck.length && !ended;i++){
-        const gap=gaps[i-1];
-        turnPage(card.src,Math.max(260,Math.round(gap*2.4)));
-        card.src=deck[i];
-        if(flashAt.has(i)) flash.animate([{opacity:0},{opacity:.38},{opacity:0}],{duration:140});
-        await wait(gap);
-      }
-      if(ended) return;
+    /* the cover: drawn once onto a canvas so it can turn like any other page */
+    const cover=await (async()=>{
+      try{ await document.fonts.ready; }catch(e){}
+      const W=Math.round(SW*2), H=Math.round(SH*2), c=document.createElement("canvas");
+      c.width=W; c.height=H; const g=c.getContext("2d");
+      const img=new Image(); img.src=deck[0]; await img.decode();
+      const r=Math.max(W/img.naturalWidth,H/img.naturalHeight);
+      g.drawImage(img,(W-img.naturalWidth*r)/2,(H-img.naturalHeight*r)/2,img.naturalWidth*r,img.naturalHeight*r);
+      /* print texture: faint halftone over the art, and a soft gloss */
+      const dot=document.createElement("canvas"); dot.width=dot.height=6;
+      const dg=dot.getContext("2d"); dg.fillStyle="rgba(0,0,0,.18)"; dg.beginPath(); dg.arc(3,3,1.2,0,6.283); dg.fill();
+      g.fillStyle=g.createPattern(dot,"repeat"); g.fillRect(0,0,W,H);
+      const gl=g.createLinearGradient(0,0,W,H);
+      gl.addColorStop(0,"rgba(255,255,255,.14)"); gl.addColorStop(.45,"rgba(255,255,255,0)");
+      g.fillStyle=gl; g.fillRect(0,0,W,H);
+      /* masthead: red band, white title, black rule */
+      const bh=Math.round(H*.17);
+      g.fillStyle="#e62429"; g.fillRect(0,0,W,bh);
+      g.fillStyle="#0b0b10"; g.fillRect(0,bh,W,Math.max(2,Math.round(H*.008)));
+      const line=(text,size,cx,cy,maxW,sy)=>{
+        g.font=`700 ${size}px "Space Grotesk","Segoe UI",sans-serif`;
+        if("letterSpacing" in g) g.letterSpacing=`${-.03*size}px`;
+        const fit=Math.min(1,maxW/g.measureText(text).width);
+        g.save(); g.translate(cx,cy); g.scale(fit,fit*sy); g.fillText(text,0,0); g.restore();
+      };
+      g.textAlign="center"; g.textBaseline="middle"; g.fillStyle="#fff";
+      line("SACRED TIMELINE",bh*.6,W/2,bh/2+bh*.03,W*.9,1.22);
+      /* issue box, bottom left */
+      const pad=W*.05, bw=W*.24, bx=pad, by=H-pad-H*.07, bb=H*.07;
+      g.fillStyle="#fff"; g.fillRect(bx,by,bw,bb);
+      g.strokeStyle="#0b0b10"; g.lineWidth=Math.max(2,W*.008); g.strokeRect(bx,by,bw,bb);
+      g.fillStyle="#0b0b10"; line(`No. ${DATA.length}`,bb*.5,bx+bw/2,by+bb/2,bw*.84,1);
+      return c.toDataURL("image/jpeg",.9);
+    })().catch(()=>deck[0]);
 
-      /* 2. the last page turns to reveal the comic's own title page */
-      const tpage=document.createElement("div"); tpage.className="intro-tpage";
-      tpage.innerHTML='<span><b>Sacred Timeline</b></span>';
-      tpage.querySelector("span").style.fontSize=(SW*.1)+"px";
-      stage.insertBefore(tpage,tint);
-      const last=turnPage(card.src,720);
-      card.style.visibility="hidden";
-      await fin(last);
-      await wait(450);
-      if(ended) return;
-
-      /* 3. the camera pushes in until the printed title IS the title card;
-            the Bifröst sweeps across on the way in */
-      hint.animate([{opacity:1},{opacity:0}],{duration:400,fill:"forwards"});
-      const k=word.offsetWidth/tpage.querySelector("b").offsetWidth;
-      const zoom=stage.animate([{transform:getComputedStyle(stage).transform},{transform:`scale(${k})`}],
-                               {duration:1000,easing:"cubic-bezier(.6,0,.25,1)",fill:"forwards"});
-      $i(".intro-stack").animate([{opacity:1},{opacity:0}],{duration:500,fill:"forwards"});
-      await wait(330);
-      const sweep=beams.map((b,i)=>b.animate([
-        {opacity:0,transform:"rotate(-16deg) scaleX(0)",transformOrigin:"0 50%"},
-        {opacity:i?.8:1,transform:"rotate(-16deg) scaleX(1)",transformOrigin:"0 50%",offset:.4},
-        {opacity:0,transform:"rotate(-16deg) scaleX(1) scaleY(.15)",transformOrigin:"0 50%"}],
-        {duration:1250,easing:"cubic-bezier(.2,.7,.2,1)",fill:"forwards"}));
-      await fin(zoom);
-      if(ended) return;
-      /* hand over: the card appears exactly over the printed title, the page dissolves */
-      logo.style.opacity="1";
-      stage.animate([{opacity:1},{opacity:0}],{duration:420,easing:"ease-out",fill:"forwards"});
-      logo.classList.add("on");                  /* starts the sheen */
-      await Promise.all(sweep.map(fin));
-      await wait(900);                           /* hold on the card */
-    } else {
-      /* fallback without a flip: beam, then the card wipes open */
-      hint.animate([{opacity:1},{opacity:0}],{duration:400,fill:"forwards"});
-      stage.style.opacity="0";
-      const sweep=beams.map((b,i)=>b.animate([
-        {opacity:0,transform:"rotate(-16deg) scaleX(0)",transformOrigin:"0 50%"},
-        {opacity:i?.8:1,transform:"rotate(-16deg) scaleX(1)",transformOrigin:"0 50%",offset:.4},
-        {opacity:0,transform:"rotate(-16deg) scaleX(1) scaleY(.15)",transformOrigin:"0 50%"}],
-        {duration:1250,easing:"cubic-bezier(.2,.7,.2,1)",fill:"forwards"}));
-      await wait(450);
-      logo.style.opacity="1";
-      const open=span.animate([{transform:"scaleX(0)"},{transform:"scaleX(1.04)",offset:.75},{transform:"scaleX(1)"}],
-                              {duration:460,easing:"cubic-bezier(.2,.9,.3,1)"});
-      const rise=word.animate([{transform:"translateY(110%) scaleY(1.22)",opacity:0},{transform:"translateY(0) scaleY(1.22)",opacity:1}],
-                              {duration:520,delay:160,easing:"cubic-bezier(.2,.9,.3,1.1)",fill:"backwards"});
-      logo.classList.add("on");
-      await Promise.all([fin(open),fin(rise),...sweep.map(fin)]);
-      await wait(1300);
-    }
+    /* the wall behind, sized for the screen */
+    if(phone) panels.style.gridTemplateColumns="repeat(6,1fr)";
+    pics.slice(DECK).concat(pics).slice(0,phone?18:40).forEach(p=>{
+      const i=new Image(); i.src=p; i.alt=""; i.decoding="async"; panels.appendChild(i); });
     if(ended) return;
 
-    /* 4. landing */
+    /* the cover screen: the book floats over the drifting wall until opened */
+    card.src=cover;
+    panels.animate([{opacity:0},{opacity:.18}],{duration:1400,fill:"forwards"});
+    panels.animate([{transform:"translate(-50%,-50%) rotate(-8deg) scale(1.06)"},{transform:"translate(-42%,-55%) rotate(-8deg) scale(.97)"}],
+                   {duration:16000,direction:"alternate",iterations:Infinity,easing:"ease-in-out"});
+    dots.animate([{opacity:0},{opacity:.5}],{duration:1200,fill:"forwards"});
+    stage.style.opacity="1";
+    await fin(stage.animate([{transform:"translateY(40px) rotateX(28deg) scale(.7)",opacity:0},
+                             {transform:"rotateY(-8deg) rotateX(5deg) scale(.96)",opacity:1}],
+                            {duration:700,easing:"cubic-bezier(.2,.8,.3,1)"}));
+    const idle=stage.animate([{transform:"translateY(0) rotateY(-8deg) rotateX(5deg) scale(.96)"},
+                              {transform:"translateY(-7px) rotateY(-4deg) rotateX(3deg) scale(.96)"}],
+                             {duration:3000,direction:"alternate",iterations:Infinity,easing:"ease-in-out"});
+    hint.textContent=matchMedia("(hover:none)").matches?"Tap to open":"Click to open";
+    const pulse=hint.animate([{opacity:.35},{opacity:.9}],{duration:1600,direction:"alternate",iterations:Infinity,easing:"ease-in-out"});
+    await opened;
+    if(ended) return;
+    running=true; openedAt=performance.now();
+    const safety=setTimeout(()=>end(true),20000);
+
+    /* the flip: the cover first, then the pages that are ready (slow, fast, slow) */
+    const pages=deck.slice(1);
+    const seq=[cover,...pages], n=seq.length;
+    const gap=i=>Math.round(92+118*Math.pow(Math.abs(i/Math.max(1,n-1)-.45)*1.65,1.4));
+    let flipTotal=900; for(let i=1;i<n-1;i++) flipTotal+=gap(i);
+    const from=getComputedStyle(stage).transform; idle.cancel();
+    pulse.cancel(); hint.animate([{opacity:.9},{opacity:0}],{duration:300,fill:"forwards"});
+    stage.animate([{transform:from},{transform:"scale(1.06) rotateY(5deg) rotateX(-2deg)"}],
+                  {duration:flipTotal+900,easing:"ease-in-out",fill:"forwards"});
+    /* the comic's title page sits under every page, revealed by the last turn */
+    const tpage=document.createElement("div"); tpage.className="intro-tpage";
+    tpage.innerHTML='<i class="tp-bg"></i><span><b>Sacred Timeline</b></span>';
+    const tspan=tpage.firstElementChild.nextElementSibling, tword=tspan.firstElementChild, tbg=tpage.firstElementChild;
+    tspan.style.fontSize=(SW*.1)+"px";
+    stage.insertBefore(tpage,card);
+    const SC=1.06, FLAT=`translate(0px,0px) scale(${SC})`;
+    const flashAt=new Set([Math.round(n*.4),Math.round(n*.72)]);
+    for(let i=0;i<n && !ended;i++){
+      if(i===n-1){
+        /* last turn: the camera levels so the title page ends flat and square-on */
+        stage.animate([{transform:getComputedStyle(stage).transform},{transform:FLAT}],{duration:700,easing:"ease-in-out",fill:"forwards"});
+        card.style.visibility="hidden";
+        await fin(turnPage(seq[i],720));
+        break;
+      }
+      turnPage(seq[i],i===0?1000:Math.max(260,Math.round(gap(i)*2.4)));
+      card.src=seq[i+1];
+      if(flashAt.has(i)) flash.animate([{opacity:0},{opacity:.38},{opacity:0}],{duration:140});
+      await wait(i===0?650:gap(i));
+    }
+    await wait(380);
+    if(ended) return;
+
+    /* lock the card over the printed title, then push in on both together. Both
+       moves are linear in the same eased progress, so the words stay locked on
+       every frame; the red page fades as the card's band fades in */
+    const P=tword.getBoundingClientRect(), W0=word.getBoundingClientRect(), L0=logo.getBoundingClientRect();
+    const m0=P.width/W0.width, m=1/m0;
+    const lockCard=`translate(${P.left-(W0.left-L0.left)*m0-L0.left}px,${P.top-(W0.top-L0.top)*m0-L0.top}px) scale(${m0})`;
+    const S=stage.getBoundingClientRect(), cx=S.left+S.width/2, cy=S.top+S.height/2;
+    const dx=(W0.left+W0.width/2)-cx-(P.left+P.width/2-cx)*m, dy=(W0.top+W0.height/2)-cy-(P.top+P.height/2-cy)*m;
+    const NONE_RED={backgroundColor:"rgba(230,36,41,0)",boxShadow:"0 0 0 rgba(230,36,41,0)"},
+          RED={backgroundColor:"#e62429",boxShadow:"0 0 60px rgba(230,36,41,.45)"};
+    /* swap the printed words for the card's words in the same frame */
+    Object.assign(span.style,NONE_RED);
+    logo.style.transformOrigin="0 0"; logo.style.transform=lockCard; logo.style.opacity="1";
+    tspan.style.visibility="hidden";
+    const Z={duration:1100,easing:"cubic-bezier(.6,0,.25,1)",fill:"forwards"};
+    const zoom=stage.animate([{transform:FLAT},{transform:`translate(${dx}px,${dy}px) scale(${SC*m})`}],Z);
+    logo.animate([{transform:lockCard},{transform:"translate(0px,0px) scale(1)"}],Z);
+    tbg.animate([{opacity:1},{opacity:1,offset:.25},{opacity:0}],Z);
+    span.animate([NONE_RED,{...NONE_RED,offset:.25},RED],Z);
+    $i(".intro-stack").animate([{opacity:1},{opacity:0}],{duration:500,fill:"forwards"});
+    await wait(360);
+    const beam=sweep();
+    await fin(zoom);
+    if(ended) return;
+    stage.style.visibility="hidden";
+    logo.style.transform=""; span.style.backgroundColor=""; span.style.boxShadow="";
+    logo.classList.add("on");                    /* the sheen */
+    await Promise.all(beam.map(fin));
+    await wait(900);                             /* hold on the card */
+    if(ended) return;
+
+    /* landing */
     clearTimeout(safety);
-    const to=title&&title.getBoundingClientRect();
-    const onScreen=to && to.bottom>0 && to.top<innerHeight && to.width>0;
     const D=1050, EASE="cubic-bezier(.45,0,.2,1)";
-    const fadeOut=[bg,dots,tint,flash,panels].map(x=>x.animate([{opacity:getComputedStyle(x).opacity},{opacity:0}],
-                                                       {duration:D*.8,delay:D*.15,easing:"ease-in-out",fill:"forwards"}));
+    const fadeOut=[bg,dots,flash,panels].map(x=>x.animate([{opacity:getComputedStyle(x).opacity},{opacity:0}],
+                                                    {duration:D*.8,delay:D*.15,easing:"ease-in-out",fill:"forwards"}));
     /* the page arrives around the title: a quick ripple from the top down */
-    const parts=[".sub",".tabs",".constellation",".tally",".countdown:not([hidden])",".nextup:not([hidden])","#controls","#list .group"]
-      .map(s=>document.querySelector(s)).filter(Boolean);
-    parts.forEach((p,i)=>reveal.push(p.animate([{opacity:0,transform:"translateY(14px)"},{opacity:1,transform:"none"}],
-      {duration:560,delay:D*.45+i*70,easing:"cubic-bezier(.2,.8,.3,1)",fill:"backwards"})));
-    if(onScreen){
-      /* text box of the real title (the h1 itself is full width) */
+    [".sub",".tabs",".constellation",".tally",".countdown:not([hidden])",".nextup:not([hidden])","#controls","#list .group"]
+      .map(s=>document.querySelector(s)).filter(Boolean)
+      .forEach((p,i)=>reveal.push(p.animate([{opacity:0,transform:"translateY(14px)"},{opacity:1,transform:"none"}],
+        {duration:560,delay:D*.45+i*70,easing:"cubic-bezier(.2,.8,.3,1)",fill:"backwards"})));
+    const to=title&&title.getBoundingClientRect();
+    if(to && to.bottom>0 && to.top<innerHeight && to.width>0){
       const rg=document.createRange(); rg.selectNodeContents(title); const tt=rg.getBoundingClientRect();
       const L=logo.getBoundingClientRect(), W=word.getBoundingClientRect();
-      /* the card: arc its words onto the title's words */
-      const s=tt.height/W.height;
-      const ex=tt.left-(W.left-L.left)*s-L.left, ey=tt.top-(W.top-L.top)*s-L.top;
-      logo.style.transformOrigin="0 0";
-      const arc=(x,y,sc)=>`translate(${x}px,${y}px) scale(${sc})`;
-      const cardFly=logo.animate([
-        {transform:"none"},
-        {transform:arc(-6,8,1.04),offset:.12},                     /* a small lift before it goes */
-        {transform:arc(ex*.4,ey*.7,1+(s-1)*.55),offset:.5},
-        {transform:arc(ex,ey,s)}],{duration:D,easing:EASE,fill:"forwards"});
-      /* an exact copy of the real title rides INSIDE the card, so it follows the
-         same path by construction. It is drawn at 1/s of the title's size over
-         the card's words; when the card reaches scale s it is the title, in the
-         title's place, font and case */
-      const tcs=getComputedStyle(title);
+      const s=tt.height/W.height, ex=tt.left-(W.left-L.left)*s-L.left, ey=tt.top-(W.top-L.top)*s-L.top;
+      const at=(x,y,k)=>`translate(${x}px,${y}px) scale(${k})`;
+      /* the card arcs its words onto the title's words, with a small lift first */
+      const fly=logo.animate([{transform:"none"},{transform:at(-6,8,1.04),offset:.12},
+                              {transform:at(ex*.4,ey*.7,1+(s-1)*.55),offset:.5},{transform:at(ex,ey,s)}],
+                             {duration:D,easing:EASE,fill:"forwards"});
+      /* an exact copy of the title rides inside the card at 1/s of its size, so
+         when the card reaches scale s it IS the title: same place, font, case */
       const ghost=title.cloneNode(true); ghost.removeAttribute("id"); ghost.className="title intro-ghost";
       ghost.style.cssText=`left:${(W.left-L.left)-(tt.left-to.left)/s}px;top:${(W.top-L.top)-(tt.top-to.top)/s}px;`+
-        `width:${to.width/s}px;font-size:${parseFloat(tcs.fontSize)/s}px;opacity:0`;
+        `width:${to.width/s}px;font-size:${parseFloat(getComputedStyle(title).fontSize)/s}px;opacity:0`;
       logo.appendChild(ghost);
       /* capitals fade out as the title fades in, passing rather than stacking */
-      span.animate([{opacity:1,backgroundColor:"#e62429",boxShadow:"0 0 60px rgba(230,36,41,.45)"},
-                    {opacity:1,offset:.28},
-                    {opacity:0,backgroundColor:"rgba(230,36,41,0)",boxShadow:"0 0 0 rgba(230,36,41,0)",offset:.62},
-                    {opacity:0,backgroundColor:"rgba(230,36,41,0)",boxShadow:"0 0 0 rgba(230,36,41,0)"}],
+      span.animate([{opacity:1,...RED},{opacity:1,offset:.28},{opacity:0,...NONE_RED,offset:.62},{opacity:0,...NONE_RED}],
                    {duration:D,easing:EASE,fill:"forwards"});
       ghost.animate([{opacity:0},{opacity:0,offset:.3},{opacity:1,offset:.68},{opacity:1}],{duration:D,easing:EASE,fill:"forwards"});
-      await fin(cardFly);
-      showTitle();                                /* identical pixels: the swap is invisible */
+      await fin(fly);
+      if(title) title.style.opacity="";           /* identical pixels: the swap is invisible */
       logo.style.visibility="hidden";
     } else {
-      logo.animate([{opacity:1},{opacity:0}],{duration:400,fill:"forwards"});
-      await wait(450);
+      await fin(logo.animate([{opacity:1},{opacity:0}],{duration:400,fill:"forwards"}));
     }
     await Promise.all(fadeOut.map(fin));
     end(false);
