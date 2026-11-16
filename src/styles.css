@@ -783,8 +783,7 @@ body.hulk:before{content:"";position:fixed;inset:0;z-index:54;pointer-events:non
 .intro-panels{position:absolute;left:50%;top:50%;width:170vmax;display:grid;
   grid-template-columns:repeat(8,1fr);gap:14px;opacity:0;
   transform:translate(-50%,-50%) rotate(-8deg)}
-.intro-panels img{width:100%;aspect-ratio:2/3;object-fit:cover;border:3px solid #0b0b10;
-  filter:grayscale(.55) contrast(1.15)}
+.intro-panels img{width:100%;aspect-ratio:2/3;object-fit:cover;border:3px solid #0b0b10}
 .intro-dots{position:absolute;inset:0;opacity:.0;
   background:radial-gradient(circle,rgba(0,0,0,.85) 1.3px,transparent 1.7px) 0 0/7px 7px}
 .intro-stage{position:relative;width:min(52vw,280px);aspect-ratio:2/3;transform-style:preserve-3d;
@@ -808,6 +807,22 @@ body.hulk:before{content:"";position:fixed;inset:0;z-index:54;pointer-events:non
   transform:rotate(-16deg) scaleX(0)}
 .intro-beam.glow{height:46px;margin-top:-23px;filter:blur(18px)}
 .intro-logo{position:relative;z-index:6;display:flex;opacity:0;pointer-events:none;transform-origin:0 50%}
+/* the travelling copy of the page title that the card cross-fades into */
+.intro-ghost{position:absolute;margin:0;pointer-events:none;white-space:nowrap}
+/* bending pages: hinged strips need real 3D, so the turning page itself must not clip (overflow:hidden would flatten its children) */
+.intro-turn{overflow:visible;border-radius:0;transform-style:preserve-3d}
+.intro-strip{position:absolute;top:0;height:100%;transform-origin:left center;transform-style:preserve-3d}
+.intro-face{position:absolute;inset:0;overflow:hidden;backface-visibility:hidden}
+.intro-face img{position:absolute;top:0;max-width:none;object-fit:cover;display:block}
+.intro-face i{position:absolute;inset:0;opacity:0;background-image:linear-gradient(90deg,rgba(0,0,0,.05),rgba(0,0,0,.25) 55%,rgba(0,0,0,.7));background-repeat:no-repeat}
+/* the comic's own title page, revealed by the last turn */
+.intro-tpage{position:absolute;inset:0;border-radius:5px;display:grid;place-items:center;
+  background:radial-gradient(circle,rgba(0,0,0,.16) 1.2px,transparent 1.6px) 0 0/6px 6px,#e62429;
+  box-shadow:inset 0 0 0 3px #b81c21,inset 0 0 40px rgba(0,0,0,.35)}
+.intro-tpage span{display:inline-block;color:#fff;font-weight:700;text-transform:uppercase;
+  letter-spacing:-.035em;line-height:1;white-space:nowrap}
+.intro-tpage b{display:inline-block;font-weight:inherit;transform:scaleY(1.22)}
+.intro-stage,.intro-turn,.intro-logo{will-change:transform,opacity}
 .intro-logo span{position:relative;display:inline-block;overflow:hidden;background:#e62429;color:#fff;
   font-weight:700;text-transform:uppercase;letter-spacing:-.035em;line-height:1;white-space:nowrap;
   font-size:clamp(30px,8.6vw,84px);padding:.1em .2em .06em;box-shadow:0 0 60px rgba(230,36,41,.45)}

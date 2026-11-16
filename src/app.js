@@ -53,150 +53,259 @@ let state = {watched:{}, extra:{}, hidden:{}, sort:"release", show:"all", series
 /*ARTWORK*/
 
 /* ============================ INTRO ============================
-   Start-up sequence over #intro, about 4s:
+   Start-up sequence over #intro, about 7-8s:
+     0. pre-roll — waits (up to ~3s) until the flip posters are downloaded AND
+        decoded, and until the app has built its list underneath, so neither
+        blank pages nor a busy main thread spoil the flip
      1. comic flip — posters turn off a page stack on a left hinge, with curl
-        shading, a camera push-in, a drifting wall of comic panels behind and two
-        red flashes at top speed (spaced >400ms apart: under 3 flashes a second)
+        shading, a camera push-in, a dim wall of comic panels behind and two red
+        flashes at top speed (spaced >400ms apart: under 3 flashes a second)
      2. punch-through — the book rushes at the camera as a Bifröst beam strikes
      3. title card — red panel wipes open, words rise in, a sheen crosses it
-     4. landing — the card flies into the real page title while the backdrop
-        dissolves; the masthead decode then plays on the real title
-   Runs before load() so the page never flashes underneath. INTRO.done resolves
-   when it has finished or been skipped.
-   Skipped: reduced motion, Effects off (checked after load), or already played
-   in this tab. Tap / any key skips. Built-in posters only — embedded (data:) or
-   project files (assets/) — so it never needs the network. */
+     4. landing — the card arcs up into the page title while cross-fading into
+        an exact copy of it; the page fades up around it; the copy then hands
+        over to the real title invisibly and the masthead decode plays on it
+   Every step waits for its animation to actually finish (not a timer), so a
+   busy phone can slow it down but never knock it out of step.
+   Only cheap effects (transform, opacity) run while things move: no animated
+   blur or filters, which stutter on phones.
+   Skipped: reduced motion, Effects off (checked after load), already played in
+   this tab, or the CSS failsafe already fired. Tap / any key skips. Built-in
+   posters only — embedded (data:) or project files (assets/) — no network. */
 const INTRO=(()=>{
   const el=document.getElementById("intro");
   const title=document.querySelector(".title");
-  let finish, ended=false;
+  let finish, ended=false, appReady, started=false;
   const done=new Promise(r=>finish=r);
+  const ready=new Promise(r=>appReady=r);
   const showTitle=()=>{ if(title) title.style.opacity=""; };
+  const reveal=[];                               /* page fade-up animations, cancelled on skip */
   const end=fast=>{
     if(ended) return; ended=true;
+    reveal.forEach(a=>{ try{ a.finish(); }catch(e){} });
     if(el){ el.classList.add("gone"); setTimeout(()=>el.remove(),fast?400:450); }
     showTitle(); finish();
   };
   let seen=false;
   try{ seen=!!sessionStorage.getItem("mcu-intro"); sessionStorage.setItem("mcu-intro","1"); }catch(e){}
-  if(!el || seen || matchMedia("(prefers-reduced-motion: reduce)").matches || typeof Element.prototype.animate!=="function"){
-    if(el) el.remove(); finish(); return {done, skip:()=>{}};
+  const failsafeFired=el && getComputedStyle(el).visibility==="hidden";
+  if(!el || seen || failsafeFired || matchMedia("(prefers-reduced-motion: reduce)").matches || typeof Element.prototype.animate!=="function"){
+    if(el) el.remove(); finish(); return {done, skip:()=>{}, ready:()=>{}};
   }
   el.classList.add("run");                      /* the script has it: cancel the CSS failsafe */
   if(title) title.style.opacity="0";            /* the card lands here later */
-  const safety=setTimeout(()=>end(true),8000);
+  const safety=setTimeout(()=>end(true),20000);
   ["pointerdown","keydown"].forEach(t=>addEventListener(t,()=>end(true),{once:true,capture:true}));
-  /* a hidden tab pauses animations but not timers, which would desync the
-     sequence: if the page is hidden once the intro is under way, just end it */
-  let started=false;
+  /* a hidden tab pauses animations, so their "finished" never arrives: end it */
   document.addEventListener("visibilitychange",()=>{ if(started && document.hidden) end(true); });
 
+  const phone=innerWidth<=620;
   const pics=Object.values(BUILTIN_ART).map(a=>a.p).filter(p=>/^(data:|assets\/)/.test(p||""));
   for(let i=pics.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pics[i],pics[j]]=[pics[j],pics[i]]; }
-  const deck=pics.slice(0,22);
   const wait=ms=>new Promise(r=>setTimeout(r,ms));
+  const fin=a=>a.finished.catch(()=>{});        /* a cancelled animation counts as done */
   const $i=s=>el.querySelector(s);
   const bg=$i(".intro-bg"), panels=$i(".intro-panels"), dots=$i(".intro-dots"), stage=$i(".intro-stage"),
         card=$i(".intro-card"), tint=$i(".intro-tint"), flash=$i(".intro-flash"),
-        beams=[...el.querySelectorAll(".intro-beam")], logo=$i(".intro-logo"),
+        beams=[...el.querySelectorAll(".intro-beam")], logo=$i(".intro-logo"), span=logo.firstElementChild,
         word=$i(".intro-logo b"), hint=$i(".intro-hint");
-  /* the panel wall reuses the rest of the posters: 8 x 5 cells */
-  pics.slice(22).concat(pics).slice(0,40).forEach(p=>{ const i=new Image(); i.src=p; i.alt=""; i.decoding="async"; panels.appendChild(i); });
+
+  /* download + decode a poster; resolves with its src, or null if it fails */
+  const prep=p=>{ const i=new Image(); i.decoding="async"; i.src=p; return i.decode().then(()=>p,()=>null); };
 
   (async()=>{
-    /* decode the first few up front so the opening turns don't stutter */
-    await Promise.race([Promise.allSettled(deck.slice(0,6).map(p=>{const i=new Image(); i.src=p; return i.decode();})), wait(700)]);
-    /* claude.ai may keep the frame hidden while it loads; start when it can be seen */
+    /* 0. pre-roll: the flip deck first, then the panel wall, so the deck isn't
+          competing for a phone's connection */
+    const want=18, budget=3000, t0=performance.now();
+    const deck=[]; let k=0;
+    const fill=async()=>{ while(deck.length<want && k<pics.length && performance.now()-t0<budget){
+      const batch=pics.slice(k,k+6); k+=6;
+      const got=await Promise.race([Promise.all(batch.map(prep)), wait(Math.max(0,budget-(performance.now()-t0)))]);
+      (got||[]).forEach(p=>{ if(p && deck.length<want) deck.push(p); }); } };
+    await fill();
+    /* the panel wall goes in during the pre-roll too, so adding it can't hitch the flip */
+    const wall=pics.filter(p=>!deck.includes(p)).concat(deck).slice(0,phone?18:40);
+    if(phone) panels.style.gridTemplateColumns="repeat(6,1fr)";
+    wall.forEach(p=>{ const i=new Image(); i.src=p; i.alt=""; i.decoding="async"; panels.appendChild(i); });
+    await Promise.race([Promise.all([ready, Promise.allSettled([...panels.querySelectorAll("img")].map(i=>i.decode()))]),
+                        wait(Math.max(400,budget-(performance.now()-t0)))]);
     if(document.visibilityState!=="visible")
       await new Promise(r=>document.addEventListener("visibilitychange",function v(){ if(document.visibilityState==="visible"){ document.removeEventListener("visibilitychange",v); r(); } }));
-    await wait(120);
-    if(ended || !deck.length) return end(true);
+    if(ended) return;
     started=true;
 
-    /* 1. the flip */
-    card.src=deck[0];
-    panels.animate([{opacity:0,transform:"translate(-50%,-50%) rotate(-8deg) scale(1.08)"},
-                    {opacity:.2,transform:"translate(-46%,-52%) rotate(-8deg) scale(1)",offset:.35},
-                    {opacity:.12,transform:"translate(-40%,-55%) rotate(-8deg) scale(.96)"}],
-                   {duration:3200,easing:"linear",fill:"forwards"});
-    dots.animate([{opacity:0},{opacity:.55}],{duration:900,fill:"forwards"});
-    stage.animate([{transform:"translateY(40px) rotateX(28deg) scale(.7)",opacity:0},
-                   {transform:"none",opacity:1}],{duration:320,easing:"cubic-bezier(.2,.8,.3,1)"});
-    await wait(300);
-    let flipTotal=0; const gaps=[];
-    for(let i=1;i<deck.length;i++){ const k=i/(deck.length-1); gaps.push(Math.round(38+82*Math.pow(Math.abs(k-.45)*1.65,1.5))); }
-    gaps.forEach(g=>flipTotal+=g);
-    /* the camera: a slow push-in and swing across the whole flip */
-    stage.animate([{transform:"scale(.94) rotateY(-10deg) rotateX(6deg)"},{transform:"scale(1.12) rotateY(7deg) rotateX(-3deg)"}],
-                  {duration:flipTotal+120,easing:"ease-in-out",fill:"forwards"});
-    const flashAt=new Set([Math.round(deck.length*.38),Math.round(deck.length*.72)]);
-    for(let i=1;i<deck.length && !ended;i++){
-      const gap=gaps[i-1];
+    /* a turning page with a gentle bend: three hinged strips, each with its own
+       clipped slice of the poster, so the outer strips can trail a few degrees
+       behind the hinge the way paper flexes. Transforms only. */
+    const SW=stage.offsetWidth, SH=stage.offsetHeight, CUTS=[.56,.26,.18];
+    const makePage=src=>{
       const turn=document.createElement("div"); turn.className="intro-turn";
-      turn.innerHTML='<img alt=""><i></i>'; turn.firstChild.src=card.src;
+      let parent=turn, x=0; const strips=[];
+      CUTS.forEach((c,n)=>{
+        const st=document.createElement("div"); st.className="intro-strip";
+        st.style.cssText=`left:${n?CUTS[n-1]*SW:0}px;width:${c*SW}px`;
+        const face=document.createElement("div"); face.className="intro-face";
+        if(n<CUTS.length-1) face.style.right="-1px";   /* overlap the next strip: no hairline seam */
+        const img=new Image(); img.alt=""; img.src=src;
+        img.style.cssText=`left:${-x}px;width:${SW}px;height:${SH}px`;
+        /* one shadow sweep across the whole page, sliced like the poster, so the
+           strips join without visible creases */
+        const shade=document.createElement("i");
+        shade.style.cssText=`background-size:${SW}px 100%;background-position:${-x}px 0`;
+        face.append(img,shade); st.appendChild(face); parent.appendChild(st);
+        strips.push(st); parent=st; x+=c*SW;
+      });
+      return {turn,strips,shades:[...turn.querySelectorAll(".intro-face i")]};
+    };
+    const turnPage=(src,dur)=>{
+      const {turn,strips,shades}=makePage(src);
       stage.insertBefore(turn,tint);
-      card.src=deck[i];
-      const dur=Math.max(110,gap*2);
-      turn.animate([{transform:"rotateY(0deg)"},{transform:"rotateY(-118deg)"}],
-                   {duration:dur,easing:"cubic-bezier(.45,.05,.55,.95)",fill:"forwards"}).finished.then(()=>turn.remove(),()=>{});
-      turn.lastChild.animate([{opacity:0},{opacity:.9}],{duration:dur,fill:"forwards"});
-      if(gap<50) card.animate([{filter:"brightness(1.35) contrast(1.1)"},{filter:"none"}],{duration:gap*2});
-      if(flashAt.has(i)) flash.animate([{opacity:0},{opacity:.42},{opacity:0}],{duration:110});
-      await wait(gap);
-    }
-    if(ended) return;
+      const ease="cubic-bezier(.45,.05,.55,.95)";
+      const a=turn.animate([{transform:"rotateY(0deg)"},{transform:"rotateY(-118deg)"}],{duration:dur,easing:ease,fill:"forwards"});
+      /* the outer strips lag, then catch up: an ever-so-slight bend */
+      strips[1].animate([{transform:"rotateY(0)"},{transform:"rotateY(8deg)",offset:.4},{transform:"rotateY(3deg)",offset:.75},{transform:"rotateY(0)"}],{duration:dur,easing:ease,fill:"forwards"});
+      strips[2].animate([{transform:"rotateY(0)"},{transform:"rotateY(10deg)",offset:.45},{transform:"rotateY(4deg)",offset:.8},{transform:"rotateY(0)"}],{duration:dur,easing:ease,fill:"forwards"});
+      shades.forEach(s=>s.animate([{opacity:0},{opacity:.5,offset:.5},{opacity:.9}],{duration:dur,fill:"forwards"}));
+      fin(a).then(()=>turn.remove());
+      return a;
+    };
 
-    /* 2. punch-through: the book rushes the camera as the Bifröst strikes */
-    hint.animate([{opacity:1},{opacity:0}],{duration:300,fill:"forwards"});
-    stage.animate([{transform:"scale(1.12) rotateY(7deg)",opacity:1,filter:"blur(0)"},
-                   {transform:"scale(3.4) rotateY(0deg)",opacity:0,filter:"blur(10px)"}],
-                  {duration:520,easing:"cubic-bezier(.6,0,.9,.5)",fill:"forwards"});
-    tint.animate([{opacity:0},{opacity:.6}],{duration:300,fill:"forwards"});
-    panels.animate([{opacity:.12},{opacity:0}],{duration:600,fill:"forwards"});
-    beams.forEach((b,i)=>b.animate([
-      {opacity:0,transform:"rotate(-16deg) scaleX(0)",transformOrigin:"0 50%"},
-      {opacity:i?.8:1,transform:"rotate(-16deg) scaleX(1)",transformOrigin:"0 50%",offset:.4},
-      {opacity:0,transform:"rotate(-16deg) scaleX(1) scaleY(.15)",transformOrigin:"0 50%"}],
-      {duration:950,easing:"cubic-bezier(.2,.7,.2,1)",fill:"forwards"}));
-    await wait(330);
-    flash.style.background="#fff";
-    flash.animate([{opacity:0},{opacity:.35},{opacity:0}],{duration:260});
+    /* 1. the flip (skipped on a connection too slow to have 6 posters ready) */
+    if(deck.length>=6){
+      card.src=deck[0];
+      panels.animate([{opacity:0,transform:"translate(-50%,-50%) rotate(-8deg) scale(1.08)"},
+                      {opacity:.18,transform:"translate(-46%,-52%) rotate(-8deg) scale(1)",offset:.3},
+                      {opacity:.14,transform:"translate(-40%,-55%) rotate(-8deg) scale(.96)"}],
+                     {duration:7000,easing:"linear",fill:"forwards"});
+      dots.animate([{opacity:0},{opacity:.5}],{duration:1200,fill:"forwards"});
+      await fin(stage.animate([{transform:"translateY(40px) rotateX(28deg) scale(.7)",opacity:0},{transform:"none",opacity:1}],
+                              {duration:520,easing:"cubic-bezier(.2,.8,.3,1)"}));
+      await wait(220);
+      if(ended) return;
+      /* gaps run slow -> fast -> slow */
+      const gaps=[]; for(let i=1;i<deck.length;i++){ const q=i/(deck.length-1); gaps.push(Math.round(92+118*Math.pow(Math.abs(q-.45)*1.65,1.4))); }
+      const flipTotal=gaps.reduce((a,b)=>a+b,0);
+      /* the camera: a slow push-in and swing across the whole flip */
+      stage.animate([{transform:"scale(.94) rotateY(-10deg) rotateX(6deg)"},{transform:"scale(1.06) rotateY(5deg) rotateX(-2deg)"}],
+                    {duration:flipTotal+900,easing:"ease-in-out",fill:"forwards"});
+      const flashAt=new Set([Math.round(deck.length*.4),Math.round(deck.length*.72)]);
+      for(let i=1;i<deck.length && !ended;i++){
+        const gap=gaps[i-1];
+        turnPage(card.src,Math.max(260,Math.round(gap*2.4)));
+        card.src=deck[i];
+        if(flashAt.has(i)) flash.animate([{opacity:0},{opacity:.38},{opacity:0}],{duration:140});
+        await wait(gap);
+      }
+      if(ended) return;
 
-    /* 3. the title card: panel wipes open from the centre, words rise into it */
-    logo.style.opacity="1";
-    const span=logo.firstElementChild;
-    span.animate([{transform:"scaleX(0)"},{transform:"scaleX(1.04)",offset:.75},{transform:"scaleX(1)"}],
-                 {duration:340,easing:"cubic-bezier(.2,.9,.3,1)"});
-    word.animate([{transform:"translateY(110%) scaleY(1.22)",opacity:0},{transform:"translateY(0) scaleY(1.22)",opacity:1}],
-                 {duration:380,delay:130,easing:"cubic-bezier(.2,.9,.3,1.1)",fill:"backwards"});
-    logo.classList.add("on");                    /* starts the sheen */
-    await wait(1100);
-    if(ended) return;
+      /* 2. the last page turns to reveal the comic's own title page */
+      const tpage=document.createElement("div"); tpage.className="intro-tpage";
+      tpage.innerHTML='<span><b>Sacred Timeline</b></span>';
+      tpage.querySelector("span").style.fontSize=(SW*.1)+"px";
+      stage.insertBefore(tpage,tint);
+      const last=turnPage(card.src,720);
+      card.style.visibility="hidden";
+      await fin(last);
+      await wait(450);
+      if(ended) return;
 
-    /* 4. landing: fly the card into the real page title, dissolve the backdrop */
-    clearTimeout(safety);
-    [bg,dots,tint,flash].forEach(x=>x.animate([{opacity:getComputedStyle(x).opacity},{opacity:0}],{duration:520,fill:"forwards"}));
-    /* measure the wrapper, not the span: the span's own wipe animation would skew it */
-    const to=title&&title.getBoundingClientRect(), from=logo.getBoundingClientRect();
-    const onScreen=to && to.bottom>0 && to.top<innerHeight && to.width>0;
-    if(onScreen){
-      const s=to.height/from.height;
-      const dx=to.left-from.left, dy=(to.top+to.height/2)-(from.top+from.height/2);
-      logo.animate([{transform:"none"},{transform:`translate(${dx}px,${dy}px) scale(${s})`}],
-                   {duration:640,easing:"cubic-bezier(.65,0,.25,1)",fill:"forwards"});
-      span.animate([{backgroundColor:"#e62429",boxShadow:"0 0 60px rgba(230,36,41,.45)"},
-                    {backgroundColor:"rgba(230,36,41,0)",boxShadow:"0 0 0 rgba(230,36,41,0)"}],
-                   {duration:640,easing:"ease-in",fill:"forwards"});
-      await wait(560);
+      /* 3. the camera pushes in until the printed title IS the title card;
+            the Bifröst sweeps across on the way in */
+      hint.animate([{opacity:1},{opacity:0}],{duration:400,fill:"forwards"});
+      const k=word.offsetWidth/tpage.querySelector("b").offsetWidth;
+      const zoom=stage.animate([{transform:getComputedStyle(stage).transform},{transform:`scale(${k})`}],
+                               {duration:1000,easing:"cubic-bezier(.6,0,.25,1)",fill:"forwards"});
+      $i(".intro-stack").animate([{opacity:1},{opacity:0}],{duration:500,fill:"forwards"});
+      await wait(330);
+      const sweep=beams.map((b,i)=>b.animate([
+        {opacity:0,transform:"rotate(-16deg) scaleX(0)",transformOrigin:"0 50%"},
+        {opacity:i?.8:1,transform:"rotate(-16deg) scaleX(1)",transformOrigin:"0 50%",offset:.4},
+        {opacity:0,transform:"rotate(-16deg) scaleX(1) scaleY(.15)",transformOrigin:"0 50%"}],
+        {duration:1250,easing:"cubic-bezier(.2,.7,.2,1)",fill:"forwards"}));
+      await fin(zoom);
+      if(ended) return;
+      /* hand over: the card appears exactly over the printed title, the page dissolves */
+      logo.style.opacity="1";
+      stage.animate([{opacity:1},{opacity:0}],{duration:420,easing:"ease-out",fill:"forwards"});
+      logo.classList.add("on");                  /* starts the sheen */
+      await Promise.all(sweep.map(fin));
+      await wait(900);                           /* hold on the card */
     } else {
-      await wait(300);
+      /* fallback without a flip: beam, then the card wipes open */
+      hint.animate([{opacity:1},{opacity:0}],{duration:400,fill:"forwards"});
+      stage.style.opacity="0";
+      const sweep=beams.map((b,i)=>b.animate([
+        {opacity:0,transform:"rotate(-16deg) scaleX(0)",transformOrigin:"0 50%"},
+        {opacity:i?.8:1,transform:"rotate(-16deg) scaleX(1)",transformOrigin:"0 50%",offset:.4},
+        {opacity:0,transform:"rotate(-16deg) scaleX(1) scaleY(.15)",transformOrigin:"0 50%"}],
+        {duration:1250,easing:"cubic-bezier(.2,.7,.2,1)",fill:"forwards"}));
+      await wait(450);
+      logo.style.opacity="1";
+      const open=span.animate([{transform:"scaleX(0)"},{transform:"scaleX(1.04)",offset:.75},{transform:"scaleX(1)"}],
+                              {duration:460,easing:"cubic-bezier(.2,.9,.3,1)"});
+      const rise=word.animate([{transform:"translateY(110%) scaleY(1.22)",opacity:0},{transform:"translateY(0) scaleY(1.22)",opacity:1}],
+                              {duration:520,delay:160,easing:"cubic-bezier(.2,.9,.3,1.1)",fill:"backwards"});
+      logo.classList.add("on");
+      await Promise.all([fin(open),fin(rise),...sweep.map(fin)]);
+      await wait(1300);
     }
-    logo.style.visibility="hidden";            /* the real title takes over in the same frame */
+    if(ended) return;
+
+    /* 4. landing */
+    clearTimeout(safety);
+    const to=title&&title.getBoundingClientRect();
+    const onScreen=to && to.bottom>0 && to.top<innerHeight && to.width>0;
+    const D=1050, EASE="cubic-bezier(.45,0,.2,1)";
+    const fadeOut=[bg,dots,tint,flash,panels].map(x=>x.animate([{opacity:getComputedStyle(x).opacity},{opacity:0}],
+                                                       {duration:D*.8,delay:D*.15,easing:"ease-in-out",fill:"forwards"}));
+    /* the page arrives around the title: a quick ripple from the top down */
+    const parts=[".sub",".tabs",".constellation",".tally",".countdown:not([hidden])",".nextup:not([hidden])","#controls","#list .group"]
+      .map(s=>document.querySelector(s)).filter(Boolean);
+    parts.forEach((p,i)=>reveal.push(p.animate([{opacity:0,transform:"translateY(14px)"},{opacity:1,transform:"none"}],
+      {duration:560,delay:D*.45+i*70,easing:"cubic-bezier(.2,.8,.3,1)",fill:"backwards"})));
+    if(onScreen){
+      /* text box of the real title (the h1 itself is full width) */
+      const rg=document.createRange(); rg.selectNodeContents(title); const tt=rg.getBoundingClientRect();
+      const L=logo.getBoundingClientRect(), W=word.getBoundingClientRect();
+      /* the card: arc its words onto the title's words */
+      const s=tt.height/W.height;
+      const ex=tt.left-(W.left-L.left)*s-L.left, ey=tt.top-(W.top-L.top)*s-L.top;
+      logo.style.transformOrigin="0 0";
+      const arc=(x,y,sc)=>`translate(${x}px,${y}px) scale(${sc})`;
+      const cardFly=logo.animate([
+        {transform:"none"},
+        {transform:arc(-6,8,1.04),offset:.12},                     /* a small lift before it goes */
+        {transform:arc(ex*.4,ey*.7,1+(s-1)*.55),offset:.5},
+        {transform:arc(ex,ey,s)}],{duration:D,easing:EASE,fill:"forwards"});
+      /* an exact copy of the real title rides INSIDE the card, so it follows the
+         same path by construction. It is drawn at 1/s of the title's size over
+         the card's words; when the card reaches scale s it is the title, in the
+         title's place, font and case */
+      const tcs=getComputedStyle(title);
+      const ghost=title.cloneNode(true); ghost.removeAttribute("id"); ghost.className="title intro-ghost";
+      ghost.style.cssText=`left:${(W.left-L.left)-(tt.left-to.left)/s}px;top:${(W.top-L.top)-(tt.top-to.top)/s}px;`+
+        `width:${to.width/s}px;font-size:${parseFloat(tcs.fontSize)/s}px;opacity:0`;
+      logo.appendChild(ghost);
+      /* capitals fade out as the title fades in, passing rather than stacking */
+      span.animate([{opacity:1,backgroundColor:"#e62429",boxShadow:"0 0 60px rgba(230,36,41,.45)"},
+                    {opacity:1,offset:.28},
+                    {opacity:0,backgroundColor:"rgba(230,36,41,0)",boxShadow:"0 0 0 rgba(230,36,41,0)",offset:.62},
+                    {opacity:0,backgroundColor:"rgba(230,36,41,0)",boxShadow:"0 0 0 rgba(230,36,41,0)"}],
+                   {duration:D,easing:EASE,fill:"forwards"});
+      ghost.animate([{opacity:0},{opacity:0,offset:.3},{opacity:1,offset:.68},{opacity:1}],{duration:D,easing:EASE,fill:"forwards"});
+      await fin(cardFly);
+      showTitle();                                /* identical pixels: the swap is invisible */
+      logo.style.visibility="hidden";
+    } else {
+      logo.animate([{opacity:1},{opacity:0}],{duration:400,fill:"forwards"});
+      await wait(450);
+    }
+    await Promise.all(fadeOut.map(fin));
     end(false);
-    if(window.__bifrost) setTimeout(()=>window.__bifrost(),120);   /* hand-off beam over the stars */
+    if(window.__bifrost) setTimeout(()=>window.__bifrost(),150);   /* hand-off beam over the stars */
   })().catch(()=>end(true));
 
-  return {done, skip:()=>end(true)};
+  return {done, skip:()=>end(true), ready:()=>appReady()};
 })();
 
 let meta = {};   /* id -> {p:poster path or url, min, ep, epmin} */
@@ -2465,6 +2574,7 @@ addEventListener("error",e=>{ if(!document.querySelector("li.entry")) bootFailed
   state.phase=r.phase;
   applyTheme(state.phase||1);
   render(); syncStick(); searchMode(); applyPrefs();
+  INTRO.ready();                               /* list is built: the intro may start its flip */
   INTRO.done.then(decodeTitle);                /* decode once the title is actually visible */
   if(r.title){
     openIds.add(r.title); render();
