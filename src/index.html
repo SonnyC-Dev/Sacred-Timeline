@@ -97,6 +97,7 @@ This tracker needs JavaScript. Everything runs in your browser — nothing is se
 
   <div class="controls" id="controls">
     <div class="field" id="qfield"><input type="search" id="q" placeholder="Search titles" autocomplete="off"><span class="hint">↵</span></div>
+    <div class="filters"><!-- display:contents on desktop; a swipeable row on phones -->
     <select id="sort" aria-label="Order">
       <option value="release">Release order</option>
       <option value="chrono">Story chronology</option>
@@ -123,6 +124,7 @@ This tracker needs JavaScript. Everything runs in your browser — nothing is se
       <option value="999">Over 2½ hours</option>
     </select>
     <label class="toggle"><input type="checkbox" id="series"> Series &amp; specials</label>
+    </div>
   </div>
 
   <div class="filterbar" id="filterbar"></div>

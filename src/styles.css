@@ -713,6 +713,58 @@ body.hulk:before{content:"";position:fixed;inset:0;z-index:54;pointer-events:non
   footer .note{text-align:left;margin-left:0}
 }
 
+/* ============================ PHONE PASS ============================
+   Phone and touch refinements. Everything here is scoped so desktop and laptop
+   render exactly as before: layout changes sit under max-width:620px, finger-
+   sized targets and 16px form text under (hover:none) and (pointer:coarse).
+   The two global rules resolve to the same values on desktop (env() is 0 there,
+   and .filters is display:contents, so its children lay out as if unwrapped). */
+.filters{display:contents}
+.wrap{padding-left:max(18px,env(safe-area-inset-left));padding-right:max(18px,env(safe-area-inset-right))}
+
+@media (max-width:620px){
+  /* header: tighter, so the list starts sooner */
+  header{padding:22px 0 12px}
+  .title{margin-bottom:6px}
+  .sub{font-size:13.5px;line-height:1.45}
+  .masthead{gap:12px}
+  /* filter bar: search gets its own row; the filters share one row you swipe
+     sideways, with a fade at the right edge to show there is more */
+  .controls{margin-top:14px;padding-top:8px;padding-bottom:8px}
+  .field{flex:1 1 100%}
+  .filters{display:flex;gap:8px;flex:1 1 100%;min-width:0;overflow-x:auto;overscroll-behavior-x:contain;
+    scrollbar-width:none;scroll-snap-type:x proximity;scroll-padding-left:18px;margin:0 -18px;padding:0 30px 0 18px;
+    -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 30px),transparent);
+            mask-image:linear-gradient(90deg,#000 calc(100% - 30px),transparent)}
+  .filters::-webkit-scrollbar{display:none}
+  .filters>*{flex:none;scroll-snap-align:start}
+  .toggle{white-space:nowrap}
+  /* small labels a little larger */
+  .facts span{font-size:11.5px}
+  .seg .c{font-size:10px}
+  .badge{font-size:11px}
+  /* messages sit clear of the iPhone home bar */
+  #toast{bottom:calc(18px + env(safe-area-inset-bottom))}
+}
+
+@media (hover:none) and (pointer:coarse){
+  /* iOS zooms the page when a field under 16px is focused, and stays zoomed */
+  :is(input,select,textarea):not([type=checkbox]):not([type=radio]){font-size:16px}  /* specific enough to beat .note, .artset input, input[type=search] */
+  /* finger-sized targets (about 40-44px) */
+  .tabs button{min-height:44px}
+  .btn{min-height:40px}
+  .stars{gap:0}
+  .stars button{min-width:40px;min-height:40px;padding:8px}
+  .epsctl button:not(.btn){width:40px;height:40px}
+  .groupmark{min-height:34px;white-space:nowrap}
+  .epsctl .btn{white-space:nowrap}
+  .caret{width:36px;height:36px}
+  .nextup .go{padding:6px 0}
+  /* a tap leaves :hover applied on touch screens; don't leave things enlarged */
+  .mark:hover,.stars button:hover{transform:none}
+}
+
+
 /* ============================ START-UP INTRO ============================
    Comic flip -> punch-through into a Bifröst sweep -> title card, which then
    flies into the real page title. Transforms, opacity and plain filters only
