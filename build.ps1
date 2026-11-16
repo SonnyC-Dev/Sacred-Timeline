@@ -51,6 +51,9 @@ $art = ([regex]'"p":"([^"]*)"').Replace($art, {
 
 foreach ($j in $titles, $art) { if ($j.Contains("</script")) { throw "data contains a closing script tag; refusing to build" } }
 
+# the hosted site's manifest file doesn't travel with the single file; the app
+# builds its own manifest at run time when no <link rel="manifest"> is present
+$page = [regex]::Replace($page, '<link rel="manifest"[^>]*>(<!--.*?-->)?\r?\n', '')
 $page = $page.Replace('<link rel="stylesheet" href="styles.css">', "<style>`n" + $css.Trim() + "`n</style>")
 $js = $js.Replace("/*TITLES*/", "/* ==== BEGIN TITLES ==== */`nconst DATA = $titles;`n/* ==== END TITLES ==== */")
 $js = $js.Replace("/*ARTWORK*/", "/* ==== BEGIN ARTWORK ==== */`nconst BUILTIN_ART=$art;`n/* ==== END ARTWORK ==== */")

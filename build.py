@@ -38,6 +38,10 @@ def main(src, out):
             sys.exit("data contains a closing script tag; refusing to build")
         return s
 
+    # the hosted site's manifest file doesn't travel with the single file; the app
+    # builds its own manifest at run time when no <link rel="manifest"> is present
+    # (untested: no Python was available when this was added)
+    page = re.sub(r'<link rel="manifest"[^>]*>(<!--.*?-->)?\r?\n', '', page)
     page = page.replace('<link rel="stylesheet" href="styles.css">',
                         "<style>\n" + css.strip() + "\n</style>")
     js = js.replace("/*TITLES*/",

@@ -1779,7 +1779,7 @@ function renderSettings(){
   });
   $("#forgetkey").addEventListener("click",()=>{
     state.tmdb=""; $("#tmdb2").value=""; save();
-    toast("Key cleared from this browser. It’s still written into the file’s source — delete the DEFAULT_TMDB line to remove it there.",{ms:8000});
+    toast("Key cleared from this browser.",{ms:5000});
   });
   updateArtPanel();
   probeImageHost();
@@ -2553,11 +2553,12 @@ function importBackup(){
 
 
 /* ---------- installable ----------
-   The manifest is built at run time and handed to the browser as a blob, so
-   the whole app stays one file. That covers Add to Home Screen and the
-   standalone window; a full offline install prompt on Android also wants a
-   service worker, which needs a real hosted URL. */
+   The hosted site links a real manifest.webmanifest (with icon files), which
+   is what Android needs for a proper home-screen app. The single portable file
+   has no such files, so there the manifest is built at run time and handed to
+   the browser as a blob instead (build.ps1 removes the static link). */
 (function(){
+  if(document.querySelector('link[rel="manifest"]')) return;
   try{
     const manifest={
       name:"Sacred Timeline", short_name:"MCU",
