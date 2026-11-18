@@ -36,8 +36,8 @@ build swaps it for everything inlined, so the single file never uses it.
 ```
 src/index.html          page shell
 src/dev-loader.js       loads the JSON, then app.js (src/ only)
-src/styles.css          about 60 KB (measured 2026-11-18)
-src/app.js              about 180 KB (measured 2026-11-18)
+src/styles.css          about 63 KB (measured 2026-11-18)
+src/app.js              about 190 KB (measured 2026-11-18)
 src/data/titles.json    the 62 titles
 src/data/artwork.json   runtimes, episode counts, poster paths
 src/assets/posters/     62 JPEGs, 1.8 MB
@@ -47,7 +47,7 @@ Built-in posters in `src/` are file paths (`assets/posters/…`); in the built
 file they are embedded images. `isURL()` and `isLocal()` accept both, so the
 app treats them the same way.
 
-Base64 inflates bytes by about a third, so the single file is 2.4 MB where the
+Base64 inflates bytes by about a third, so the single file is 2.5 MB where the
 project is 2.0 MB.
 
 ---

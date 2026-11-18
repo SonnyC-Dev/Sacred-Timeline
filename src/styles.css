@@ -96,8 +96,9 @@ header{padding:52px 0 26px}
 .seg .n{color:var(--ink);font-size:15px;font-weight:700;letter-spacing:-.02em;
   font-variant-numeric:tabular-nums;margin-top:2px;
   text-shadow:0 1px 6px rgba(5,6,10,.85)}
-.seg:hover,.seg:focus-visible{color:var(--ink);background:rgba(255,255,255,.06)}
-.seg:hover .fill{filter:brightness(1.25)}
+.seg:focus-visible{color:var(--ink);background:rgba(255,255,255,.06)}
+@media (hover:hover){ .seg:hover{color:var(--ink);background:rgba(255,255,255,.06)} }   /* hover only where a pointer can hover: a tap would leave it stuck */
+@media (hover:hover){ .seg:hover .fill{filter:brightness(1.25)} }
 .seg[aria-pressed="true"]{box-shadow:inset 0 0 0 1.5px var(--pc)}
 .seg:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .seg.done{background:transparent}
@@ -126,7 +127,7 @@ header{padding:52px 0 26px}
 .btn.primary{border-color:var(--accent-2);background:var(--glow);clip-path:var(--chamfer)}
 .btn.danger{border-style:dashed;border-color:rgba(255,83,71,.4);color:#ff8a80;background:transparent;opacity:.75}
 .btn.danger:hover{opacity:1;border-color:#ff5347;border-style:solid;transform:none}
-.btn:hover{border-color:var(--accent);transform:translateY(-1px)}
+@media (hover:hover){ .btn:hover{border-color:var(--accent);transform:translateY(-1px)} }
 .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 /* ---------- controls ---------- */
@@ -191,7 +192,8 @@ li.entry{position:relative;padding:10px 0;border-bottom:1px solid var(--line-sof
 li.entry:last-child{border-bottom:0}
 li.entry:before{content:"";position:absolute;left:-21px;top:2px;bottom:2px;width:1px;
   background:var(--ec,var(--accent));opacity:0;transition:opacity .3s var(--ease)}
-li.entry:hover:before,li.entry.cursor:before,li.entry.open:before{opacity:.5}
+li.entry.cursor:before,li.entry.open:before{opacity:.5}
+@media (hover:hover){ li.entry:hover:before{opacity:.5} }
 li.entry.cursor{background:linear-gradient(90deg,rgba(255,255,255,.045),transparent 60%)}
 
 .mark{position:absolute;left:-26px;top:32px;width:13px;height:13px;border-radius:50%;
@@ -200,7 +202,7 @@ li.entry.cursor{background:linear-gradient(90deg,rgba(255,255,255,.045),transpar
 .mark:after{content:"";position:absolute;inset:-14px;border-radius:50%} /* touch target */
 .mark:before{content:"";position:absolute;inset:-4px;border-radius:50%;
   border:1px solid var(--ec,var(--accent));opacity:0;pointer-events:none}
-.mark:hover{border-color:var(--accent);transform:scale(1.15)}
+@media (hover:hover){ .mark:hover{border-color:var(--accent);transform:scale(1.15)} }
 .mark[disabled]{opacity:.3;cursor:not-allowed}
 .entry.seen .mark{background:var(--ec,var(--accent));border-color:var(--ec,var(--accent));
   box-shadow:0 0 14px 2px var(--ec,var(--accent))}
@@ -212,7 +214,8 @@ li.entry.cursor{background:linear-gradient(90deg,rgba(255,255,255,.045),transpar
 .name{flex:1;min-width:0}
 .name h3{margin:0;font-size:var(--t-lg);font-weight:500;letter-spacing:-.008em;transition:color .2s var(--ease)}
 .entry.seen .name h3{color:var(--ink-dim)}
-.row:hover .name h3,.entry.open .name h3{color:var(--ec,var(--accent))}
+.entry.open .name h3{color:var(--ec,var(--accent))}
+@media (hover:hover){ .row:hover .name h3{color:var(--ec,var(--accent))} }
 .name p{margin:3px 0 0;color:var(--ink-dim);font-size:var(--t-sm);opacity:.8}
 .badge{font-size:10.5px;padding:2px 7px;border-radius:20px;border:1px solid var(--line);
   color:var(--ink-faint);white-space:nowrap;flex:none}
@@ -237,10 +240,10 @@ li.entry.cursor{background:linear-gradient(90deg,rgba(255,255,255,.045),transpar
 .entry:not(.seen) .tile{filter:grayscale(.75) brightness(.62) contrast(1.05)}
 .entry.seen .tile{box-shadow:inset 0 0 0 1px var(--ec,var(--accent)),0 0 18px -6px var(--ec,var(--accent))}
 .entry.seen .tile:after{opacity:.28}
-.row:hover .tile{transform:translateY(-2px) scale(1.03);filter:none}
+@media (hover:hover){ .row:hover .tile{transform:translateY(-2px) scale(1.03);filter:none} }   /* on touch this left a tapped poster stuck in colour mid-animation */
 
 /* ---------- expanding panel ---------- */
-.panel{display:grid;grid-template-rows:0fr;transition:grid-template-rows .42s var(--ease)}
+.panel{display:grid;grid-template-rows:0fr;transition:grid-template-rows .46s cubic-bezier(.4,0,.2,1)}   /* an even curve: no "pop then crawl" */
 .entry.open .panel{grid-template-rows:1fr}
 .panel > .inner{overflow:hidden;min-height:0}
 .sheet{position:relative;margin:12px 0 6px 55px;padding:14px 16px;border-radius:12px;
@@ -249,7 +252,7 @@ li.entry.cursor{background:linear-gradient(90deg,rgba(255,255,255,.045),transpar
   opacity:0;transition:opacity .6s var(--ease);
   -webkit-mask-image:linear-gradient(to left,#000 5%,transparent 92%);
   mask-image:linear-gradient(to left,#000 5%,transparent 92%)}
-.entry.open .art{opacity:.4}
+.entry.open .art{opacity:.4;transition-delay:.25s}   /* fades in once the panel is mostly open */
 .entry.open.seen .art{opacity:.55}
 .sheet > *{position:relative}
 .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:8px;max-width:78%}
@@ -357,7 +360,7 @@ kbd{display:inline-block;padding:1px 5px;border-radius:5px;border:1px solid var(
   opacity:0;pointer-events:none;transition:opacity .35s var(--ease),transform .35s var(--ease)}
 #toast.on{opacity:1;transform:translate(-50%,0)}
 
-::view-transition-old(root),::view-transition-new(root){animation-duration:.45s}
+::view-transition-old(root),::view-transition-new(root){animation-duration:.3s;animation-timing-function:cubic-bezier(.4,0,.2,1)}   /* quicker: input waits while it plays */
 
 /* ---------- navigation layout ---------- */
 .masthead{display:flex;gap:20px;align-items:flex-start}
@@ -680,7 +683,8 @@ body.hulk:before{content:"";position:fixed;inset:0;z-index:54;pointer-events:non
    mis-painted elements on phone browsers, and large blurs on a full-screen
    layer can stall them outright. Neither is load-bearing, so both go. */
 @media (max-width:620px){
-  .controls,.card,.nextup,.constellation,#toast,.panel,.sheet{backdrop-filter:none!important}
+  .controls,.card,.nextup,.constellation,#toast,.panel,.sheet,.group-head,.modal{backdrop-filter:none!important}
+  .modal{background:rgba(3,4,8,.82)}   /* nearly opaque instead of blurred */
   .card,.nextup,.btn.primary{clip-path:none}
   #backdrop .bd-fill{filter:blur(20px) saturate(1.35) brightness(.85);transform:scale(1.2)}
   #backdrop .bd-sharp{filter:saturate(1.15) brightness(1.06)}
@@ -901,15 +905,28 @@ body.hulk:before{content:"";position:fixed;inset:0;z-index:54;pointer-events:non
   background:radial-gradient(circle at var(--x,50%) var(--y,45%),#ffe4e8 0%,rgba(255,120,140,.5) 30%,rgba(255,80,100,0) 65%)}
 .sw-halo,.sw-wisp,.sw-core,.sw-aura,.sw-after,.sw-mist{mix-blend-mode:screen}
 @supports (mix-blend-mode:plus-lighter){ .sw-halo,.sw-wisp,.sw-core,.sw-aura,.sw-after,.sw-mist{mix-blend-mode:plus-lighter} }
-/* the mirror dimension */
+/* the mirror dimension: glass shards with crisp white edges, split on seams */
 .egg-mirror{perspective:1100px}
+/* the copied page must not run its own animations, transitions or blurs */
+.egg-mirror .eg-tile *{animation:none!important;transition:none!important;backdrop-filter:none!important}
 .eg-spin{position:absolute;inset:0;transform-style:preserve-3d}
 .eg-tile{position:absolute;overflow:hidden;transform-style:flat;backface-visibility:visible;will-change:transform}
-/* a faint white glint crossing each shard as it folds, like light on glass */
-.eg-tile::after{content:"";position:absolute;inset:-60%;pointer-events:none;
-  background:linear-gradient(115deg,transparent 44%,rgba(255,255,255,.2) 49%,rgba(235,244,255,.32) 50%,rgba(255,255,255,.2) 51%,transparent 56%);
-  animation:egGlint 4.4s cubic-bezier(.45,0,.25,1) both}
-@keyframes egGlint{0%,12%{transform:translateX(-55%);opacity:0}30%{opacity:1}70%{opacity:1}88%,100%{transform:translateX(55%);opacity:0}}
+.eg-tile>i{position:absolute;display:block;pointer-events:none}
+.eg-edge{inset:0;opacity:0;box-shadow:inset 0 0 0 1px rgba(255,255,255,.85),inset 0 0 18px rgba(200,225,255,.35)}
+.eg-glass{inset:0;background:linear-gradient(160deg,rgba(210,230,255,.10),transparent 40%,rgba(160,190,255,.08))}
+/* a glint: a narrow tilted band of light, about 1.3 tiles of area, not 5 */
+.eg-glint{top:-60%;left:0;width:60%;height:220%;opacity:0;transform:translateX(-150%) rotate(25deg);
+  background:linear-gradient(90deg,transparent 40%,rgba(160,220,255,.22) 47%,rgba(255,255,255,.4) 50%,rgba(255,190,240,.22) 53%,transparent 60%)}
+.eg-seam{position:absolute;z-index:2;opacity:0;pointer-events:none;
+  background:linear-gradient(var(--sd,180deg),transparent,rgba(255,255,255,.95) 20%,#fff 50%,rgba(255,255,255,.95) 80%,transparent);
+  box-shadow:0 0 8px rgba(210,230,255,.8)}
+.eg-seam.v{top:0;bottom:0;width:2px;transform-origin:50% 50%}
+.eg-seam.h{left:0;right:0;height:2px;--sd:90deg;transform-origin:50% 50%}
+/* a faint prismatic wash turning slowly behind the shards */
+.eg-prism{left:50%;top:50%;width:150vmax;height:150vmax;margin:-75vmax 0 0 -75vmax;opacity:0;border-radius:50%;
+  background:repeating-conic-gradient(from 0deg,rgba(150,210,255,.5) 0deg 10deg,rgba(255,200,240,.35) 10deg 20deg,rgba(255,255,255,.4) 20deg 30deg,transparent 30deg 45deg);
+  mix-blend-mode:screen}
+@supports (mix-blend-mode:plus-lighter){ .eg-prism{mix-blend-mode:plus-lighter} }
 
 /* ============================ START-UP INTRO ============================
    A comic you open: its cover floats over a wall of poster panels until a tap,

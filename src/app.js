@@ -36,7 +36,10 @@ const BY_ID = Object.fromEntries(DATA.map(m=>[m.id,m]));
 const DEFAULT_TMDB="";
 
 const KEY="mcu-tracker:v1", MKEY="mcu-meta:v2";
-const today = ()=> new Date().toISOString().slice(0,10);
+/* local calendar dates (UK time), not UTC: toISOString() is UTC, which in
+   summer time files anything logged between midnight and 1am under the day before */
+const ymd = d=> `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const today = ()=> ymd(new Date());
 let state = {watched:{}, extra:{}, hidden:{}, sort:"release", show:"all", series:true, q:"", phase:0, tmdb:DEFAULT_TMDB, view:"list",
              liveSearch:false, theme:"phase", fx:true, compact:false, maxlen:0, hideFuture:false};
 /* Poster paths baked into this file. Images load straight from the public
@@ -410,7 +413,8 @@ function save(){
   },300);
 }
 function saveMeta(){
-  clearTimeout(t2); t2=setTimeout(async()=>{ try{ await store.set(MKEY, JSON.stringify(meta)); }catch(e){} },900);
+  clearTimeout(t2); t2=setTimeout(async()=>{ try{ await store.set(MKEY, JSON.stringify(meta)); }
+    catch(e){ say("Can't save artwork to this browser: it may be full. Your watch progress is unaffected."); } },900);
 }
 
 /* ---------- sync between devices (GitHub Gist) ----------
@@ -728,6 +732,7 @@ function applyTheme(p, preview){
   (function frame(){
     requestAnimationFrame(frame);
     if(document.hidden) return;                      /* no work in a background tab */
+    if(document.body.classList.contains("egging")) return;   /* an Easter egg has the frame budget; the last frame stays up */
     ctx.clearRect(0,0,w,h);
     /* group stars into eight alpha buckets so this is 8 fills a frame, not one per star */
     const buckets=[[],[],[],[],[],[],[],[]];
@@ -1170,21 +1175,26 @@ function snapshot(){
 function flip(before){
   if(!before || !before.size) return;
   if(matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const rows=[...document.querySelectorAll("li.entry")];
-  rows.forEach((el,i)=>{
+  /* only rows that are (or were) near the screen animate; long moves are
+     clamped so rows don't streak across it, and durations are capped */
+  const rows=[...document.querySelectorAll("li.entry")], H=innerHeight, near=r=>r.bottom>-H*.5 && r.top<H*1.5;
+  let k=0;
+  rows.forEach(el=>{
     const b=before.get(el.dataset.id);
     const a=el.getBoundingClientRect();
-    const delay=Math.min(200, i*10);
     if(!b){
-      el.animate([{opacity:0,transform:"translateY(14px)"},{opacity:1,transform:"none"}],
-        {duration:700,delay,easing:"cubic-bezier(.22,.8,.3,1)",fill:"backwards"});
+      if(!near(a)) return;
+      el.animate([{opacity:0,transform:"translateY(12px)"},{opacity:1,transform:"none"}],
+        {duration:450,delay:Math.min(160,(k++)*12),easing:"cubic-bezier(.2,.8,.3,1)",fill:"backwards"});
       return;
     }
-    const dy=b.top-a.top, dx=b.left-a.left;
+    if(!near(a) && !near(b)) return;
+    let dy=b.top-a.top; const dx=b.left-a.left;
     if(Math.abs(dy)<2 && Math.abs(dx)<2) return;
+    dy=Math.max(-H*.6,Math.min(H*.6,dy));
     el.animate([{transform:`translate(${dx}px,${dy}px)`},{transform:"none"}],
-      {duration:Math.min(1500, 650+Math.abs(dy)*.75), delay,
-       easing:"cubic-bezier(.22,.78,.26,1)", fill:"backwards"});
+      {duration:Math.min(600, 380+Math.abs(dy)*.5), delay:Math.min(160,(k++)*12),
+       easing:"cubic-bezier(.25,.8,.3,1)", fill:"backwards"});
   });
 }
 
@@ -1252,17 +1262,48 @@ function render(animate){
   flip(before);
 }
 
+/* Update one row in place instead of rebuilding all of them, when the list's
+   order and contents would come out exactly the same (otherwise returns false
+   and the caller does the full render). Keeps the same poster element, so its
+   grey-to-colour fade plays; keeps keyboard focus; no poster flicker. */
+function patchRow(id){
+  const old=listEl.querySelector(`li.entry[data-id="${id}"]`); if(!old) return false;
+  const want=sorted(visible()).map(m=>m.id), have=[...listEl.querySelectorAll("li.entry")].map(e=>e.dataset.id);
+  if(want.length!==have.length || want.some((x,i)=>x!==have[i])) return false;
+  const fresh=entry(BY_ID[id],have.indexOf(id)+1), to=fresh.className;
+  const a=old.querySelector(".tile"), b=fresh.querySelector(".tile"); if(a&&b) b.replaceWith(a);
+  const all=[...old.querySelectorAll("*")], fi=old.contains(document.activeElement)?all.indexOf(document.activeElement):-1;
+  fresh.className=old.className.replace(/\b(just|cursor)\b/g," ").trim();   /* start from the old look... */
+  old.replaceWith(fresh); void fresh.offsetWidth; fresh.className=to;        /* ...so the change animates */
+  if(cursorId===id) fresh.classList.add("cursor");
+  if(fi>=0){ const f=fresh.querySelectorAll("*")[fi]; if(f&&f.focus) f.focus({preventScroll:true}); }
+  if(justMarked===id){ fresh.classList.add("just"); setTimeout(()=>fresh.classList.remove("just"),820); justMarked=null; }
+  renderTally(); renderNext(); renderCountdown(); renderFilterBar();
+  return true;
+}
+
 /* Netflix-style: the poster flashes up behind the page, then drifts away */
+/* the big blurred poster behind an opened title. It is decoded first and
+   started on a later frame, so the decode and blur don't land in the same
+   frames as the row opening (that was a visible hitch on tap) */
+let bdToken=0;
 function flashBackdrop(m){
   if(!fxOn()) return;
   const path=artOf(m);
   if(!path) return;                       /* generated key art doesn’t scale up well */
-  const el=$("#backdrop");
-  el.classList.remove("flash");
-  void el.offsetWidth;                    /* restart the animation cleanly */
-  el.style.setProperty("--bd",`url("${IMG_BIG(path)}")`);
-  el.classList.add("flash");
+  const el=$("#backdrop"), url=IMG_BIG(path), token=++bdToken;
+  const im=new Image(); im.decoding="async"; im.src=url;
+  const go=()=>requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    if(token!==bdToken || !openIds.has(m.id)) return;   /* a newer tap, or closed again */
+    el.classList.remove("flash");
+    void el.offsetWidth;                  /* restart the animation cleanly */
+    el.style.setProperty("--bd",`url("${url}")`);
+    el.classList.add("flash");
+  }));
+  (im.decode?im.decode():Promise.resolve()).then(go,go);
 }
+/* release the heavy blurred layers once the flash has played */
+document.getElementById("backdrop").addEventListener("animationend",e=>{ if(e.target.id==="backdrop") e.target.classList.remove("flash"); });
 
 function entry(m,n){
   const wr=state.watched[m.id], pal=PHASES[m.p], pos=POS[m.id];
@@ -1364,6 +1405,7 @@ function entry(m,n){
     </div></div></div>`;
 
   const toggleOpen=()=>{
+    motionUntil=performance.now()+520;          /* hold background theme changes until it has opened */
     const now=!openIds.has(m.id);
     now?openIds.add(m.id):openIds.delete(m.id);
     li.classList.toggle("open",now);
@@ -1429,7 +1471,7 @@ function entry(m,n){
   li.querySelectorAll("[data-rate]").forEach(b=>b.addEventListener("click",()=>{
     const v=Number(b.dataset.rate);
     setExtra(m.id,{rate: v===0||ex.rate===v ? 0 : v});
-    render(); renderStats();
+    if(!patchRow(m.id)) render(); renderStats();
   }));
 
   /* notes, saved as you stop typing */
@@ -1450,11 +1492,17 @@ function entry(m,n){
   return li;
 }
 
+/* while a row is opening, a theme change (which restyles the whole page) is
+   deferred until the opening has finished, so the two don't share frames */
+let motionUntil=0, themeT=0;
 function observe(){
   if(io) io.disconnect();
   io=new IntersectionObserver(es=>{
     const top=es.filter(e=>e.isIntersecting).sort((a,b)=>a.boundingClientRect.top-b.boundingClientRect.top)[0];
-    if(top) applyTheme(Number(top.target.dataset.phase));
+    if(!top) return;
+    const ph=Number(top.target.dataset.phase), wait=motionUntil-performance.now();
+    clearTimeout(themeT);
+    if(wait>0) themeT=setTimeout(()=>applyTheme(ph),wait+30); else applyTheme(ph);
   },{rootMargin:"-15% 0px -70% 0px",threshold:0});
   document.querySelectorAll(".group").forEach(g=>io.observe(g));
 }
@@ -1561,11 +1609,7 @@ function renderNext(){
       <button class="go" id="nextgo">${next.ti}</button></span>
       <span class="acts"><button class="btn primary" id="nextdone">Mark watched</button><button class="btn" id="tonight">Tonight</button><button class="btn" id="rand">Surprise me</button></span>${ticks}`;
     $("#nextdone").addEventListener("click",()=>setWatched(next.id,true));
-    $("#nextgo").addEventListener("click",()=>{
-      openIds.add(next.id);
-      if(state.view!=="list") setView("list"); else render(true);
-      setTimeout(()=>focusOn(next.id),40);
-    });
+    $("#nextgo").addEventListener("click",()=>reveal(next.id));
   }
   const tb=$("#tonight"); if(tb) tb.addEventListener("click",tonight);
   $("#rand").addEventListener("click",surprise);
@@ -1627,13 +1671,13 @@ function renderStats(){
   const months=[], now=new Date();
   for(let i=11;i>=0;i--){
     const d=new Date(now.getFullYear(),now.getMonth()-i,1);
-    months.push({k:d.toISOString().slice(0,7), lbl:d.toLocaleDateString("en-GB",{month:"narrow"}), n:0});
+    months.push({k:ymd(d).slice(0,7), lbl:d.toLocaleDateString("en-GB",{month:"narrow"}), n:0});
   }
   dates.forEach(d=>{ const mth=months.find(x=>x.k===d.slice(0,7)); if(mth) mth.n++; });
   const peak=Math.max(1,...months.map(m=>m.n));
 
   /* pace over the last 90 days → projection */
-  const cut=new Date(Date.now()-90*864e5).toISOString().slice(0,10);
+  const cut=ymd(new Date(Date.now()-90*864e5));
   const recent=dates.filter(d=>d>=cut).length;
   const perMonth=recent/3;
   const left=out.length-out.filter(isDone).length;
@@ -1677,7 +1721,7 @@ function renderStats(){
   unknownLen=P.filter(m=>!totalMinutes(m)).length;
 
   const nextRel=DATA.filter(m=>m.r>today()).sort((a,b)=>a.r.localeCompare(b.r))[0];
-  const planDefault=nextRel?nextRel.r:new Date(Date.now()+90*864e5).toISOString().slice(0,10);
+  const planDefault=nextRel?nextRel.r:ymd(new Date(Date.now()+90*864e5));
   const planLabel=nextRel?`default: ${nextRel.ti}`:"";
 
   const R=54, C=2*Math.PI*R;
@@ -2017,7 +2061,9 @@ const scrollMem={list:0,stats:0,settings:0};
 function syncStick(){
   const c=$("#controls");
   const tuck=c.classList.contains("tucked") ? parseFloat(c.style.getPropertyValue("--tuck"))||0 : 0;
-  document.documentElement.style.setProperty("--stick", ((c.offsetHeight||52)-tuck)+"px");
+  /* set on the list (its sticky headings are the only users), so a change
+     restyles the list rather than the whole page */
+  $("#list").style.setProperty("--stick", ((c.offsetHeight||52)-tuck)+"px");
 }
 addEventListener("resize",syncStick);
 
@@ -2128,9 +2174,24 @@ function surprise(){
   const pick=from[Math.floor(Math.random()*from.length)];
   state.phase=0; state.q=""; state.show="all";
   $("#q").value=""; $("#show").value="all";
-  openIds.add(pick.id);
-  if(state.view!=="list") setView("list"); else render(true);
-  focusOn(pick.id);
+  reveal(pick.id);
+}
+/* Jump to a title: show the list (no sliding rows), scroll to it, and only
+   once the scroll has settled open it the same way a tap does. One motion at
+   a time instead of rows sliding, a scroll and an expand all at once. */
+function reveal(id){
+  const switching=state.view!=="list";
+  if(switching) setView("list"); else render();
+  setTimeout(()=>{
+    focusOn(id);
+    let last=-1, still=0; const t0=performance.now();
+    (function wait(){
+      if(scrollY===last) still++; else { still=0; last=scrollY; }
+      if(still<6 && performance.now()-t0<1200) return requestAnimationFrame(wait);
+      const li=listEl.querySelector(`li.entry[data-id="${id}"]`);
+      if(li && !li.classList.contains("open")) li.querySelector(".row").click();
+    })();
+  }, switching?380:30);
 }
 function focusOn(id){
   const el=listEl.querySelector(`li[data-id="${id}"]`);
@@ -2152,7 +2213,11 @@ addEventListener("keydown",e=>{
       else document.activeElement.blur();
       return;
     }
-    if(openIds.size){ openIds.clear(); render(); return; }
+    if(openIds.size){                            /* close open rows with the same animation as a tap */
+      motionUntil=performance.now()+520;
+      openIds.forEach(id=>{ const li=listEl.querySelector(`li.entry[data-id="${id}"]`);
+        if(li){ li.classList.remove("open"); const r=li.querySelector(".row"); if(r) r.setAttribute("aria-expanded","false"); } });
+      openIds.clear(); return; }
     if(state.phase||state.show!=="all"||state.q||state.maxlen) clearFilters();
     return;
   }
@@ -2199,7 +2264,10 @@ function modal(html,setup){
     document.body.appendChild(back);
     const h=back.querySelector("h3");               /* the heading names the dialog */
     if(h){ h.id="modalTitle"; back.firstElementChild.setAttribute("aria-labelledby","modalTitle"); }
-    const close=v=>{ document.removeEventListener("keydown",esc); back.remove();
+    const close=v=>{ document.removeEventListener("keydown",esc);
+      /* fade out rather than vanish; the answer is given straight away */
+      back.style.pointerEvents="none";
+      (back.animate?back.animate([{opacity:1},{opacity:0}],{duration:140,easing:"ease-out",fill:"forwards"}).finished:Promise.resolve()).then(()=>back.remove(),()=>back.remove());
       if(opener && opener.isConnected && opener.focus) opener.focus({preventScroll:true}); res(v); };
     const esc=e=>{ if(e.key==="Escape"){ e.preventDefault(); close(null); } };
     document.addEventListener("keydown",esc);
@@ -2234,7 +2302,7 @@ function askPeriod(n){
     root.querySelector("#presets").addEventListener("click",e=>{
       const b=e.target.closest("[data-days]"); if(!b) return;
       const days=Number(b.dataset.days);
-      from.value=new Date(Date.now()-days*864e5).toISOString().slice(0,10);
+      from.value=ymd(new Date(Date.now()-days*864e5));
       to.value=today();
       root.querySelectorAll("#presets button").forEach(x=>x.setAttribute("aria-pressed",x===b));
     });
@@ -2374,7 +2442,7 @@ function setEpisodes(id,n){
   if(n<=0) delete state.watched[id];
   else if(n>=tot) state.watched[id]={d:today(), n:(prev&&prev.n)||1, w:(prev&&prev.w)||[today()]};
   else state.watched[id]={d:(prev&&prev.d)||today(), n:1, w:(prev&&prev.w)||[today()], ep:n};
-  save(); render(); renderStats();
+  save(); if(!patchRow(id)) render(); renderStats();
 }
 
 /* one place for every watched change, so undo always works */
@@ -2384,10 +2452,10 @@ function setWatched(id,on,quiet){
   const prev = state.watched[id] ? {...state.watched[id]} : null;
   if(on){ state.watched[id]=prev&&prev.w ? Object.assign({},prev) : {d:today(),n:1,w:[today()]}; justMarked=id; }
   else delete state.watched[id];
-  save(); render(true); renderStats();
+  save(); if(!patchRow(id)) render(true); renderStats();
   if(!quiet) toast(on?`Marked ${m.ti} watched`:`${m.ti} set back to unwatched`,{
     action:"Undo",
-    onAction:()=>{ prev ? state.watched[id]=prev : delete state.watched[id]; save(); render(true); renderStats(); }
+    onAction:()=>{ prev ? state.watched[id]=prev : delete state.watched[id]; save(); if(!patchRow(id)) render(true); renderStats(); }
   });
 }
 
@@ -2395,6 +2463,7 @@ function setWatched(id,on,quiet){
 function toast(msg,opts){
   const o = typeof opts==="number" ? {ms:opts} : (opts||{});
   const t=$("#toast");
+  const wasOn=t.classList.contains("on");
   t.innerHTML="";
   const s=document.createElement("span"); s.textContent=msg; t.appendChild(s);
   if(o.action){
@@ -2403,6 +2472,8 @@ function toast(msg,opts){
     t.appendChild(b);
   }
   t.classList.add("on");
+  /* a new message replacing one already showing re-pops gently instead of snapping */
+  if(wasOn && t.animate) t.animate([{opacity:.4,scale:".97"},{opacity:1,scale:"1"}],{duration:180,easing:"ease-out"});
   /* a message with an Undo stays at least 6s, so a mis-tap can be undone */
   clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("on"), Math.max(o.ms||3400, o.action?6000:0));
 }
@@ -2567,13 +2638,13 @@ function eggOverlay(cls,cleanup){
   if(eggBusy) return null;
   eggBusy=true;
   const ov=document.createElement("div"); ov.className="egg "+cls; ov.setAttribute("aria-hidden","true");
-  document.body.appendChild(ov);
+  document.body.appendChild(ov); document.body.classList.add("egging");
   let done=false;
   const finish=()=>{
     if(done) return; done=true; eggBusy=false;
     removeEventListener("pointerdown",skip,true); removeEventListener("keydown",skip,true);
     ov.getAnimations({subtree:true}).forEach(a=>a.cancel());
-    ov.remove(); if(cleanup) cleanup();
+    ov.remove(); document.body.classList.remove("egging"); if(cleanup) cleanup();
   };
   /* the key that skips does only that: it doesn't also fire a shortcut */
   const skip=e=>{ if(e.type==="keydown"){ e.preventDefault(); e.stopPropagation(); } finish(); };
@@ -2782,63 +2853,109 @@ function gauntlet(){
   Promise.all(out.map(a=>a.finished)).then(()=>{ if(!isDone()) finish(); },()=>{});
 }
 
-/* Mirror Dimension, about 4.4s: the page itself shatters into tiles that fold
-   and spin like a kaleidoscope, then snap back. The tiles are copies of only
-   what is on screen (off-screen rows become empty spacers of the same height,
-   so phones aren't copying the whole list a dozen times); sticky bars are
-   pinned where they are showing. The real page is hidden underneath and
-   reappears exactly where it was. */
+/* Mirror Dimension, about 4.6s: the page itself splits along mirrored seams.
+     crack       the page holds still; white seams draw outward from the centre
+     split       tiles hinge open on their shared seams, left and right as
+                 mirror images of each other, rippling out from the centre
+     kaleidoscope the whole view turns and shrinks a touch; the centre tiles
+                 flip over to show their mirrored backs, over a faint prism
+     fold back   outside-in, back to flat
+     seal        the seams flash once to hide the hand-back to the real page
+   The tiles are copies of only what is on screen (off-screen rows become empty
+   spacers, closed panels are emptied, sticky bars are pinned where they show),
+   so phones aren't copying the whole list. Each tile has a crisp white edge, a
+   faint glass tint and a glint that crosses the whole screen; only transform
+   and opacity animate. The real page is hidden underneath and reappears
+   exactly where it was. */
 function mirrorDimension(){
   if(reduced()){ toast("The mirror dimension needs effects on. Turn them on in Settings."); return; }
   const wrap=document.querySelector(".wrap");
   const E=eggOverlay("egg-mirror",()=>{ wrap.style.visibility=""; }); if(!E) return;
   const {ov,finish,isDone}=E;
   const W=innerWidth, H=innerHeight, R=wrap.getBoundingClientRect();
-  /* build one trimmed copy of what is on screen (sticky bars tagged first, so
-     each can be matched to its copy after rows are swapped for spacers) */
-  const realSticky=[...wrap.querySelectorAll("*")].filter(e=>getComputedStyle(e).position==="sticky");
+  /* one trimmed copy of what is on screen; sticky bars tagged first so each
+     can be matched to its copy after rows are swapped for spacers */
+  const realSticky=[...wrap.querySelectorAll("#controls, .group-head")];
   realSticky.forEach((e,i)=>e.setAttribute("data-egg-sticky",i));
   const base=wrap.cloneNode(true);
   realSticky.forEach(e=>e.removeAttribute("data-egg-sticky"));
   const realRows=[...wrap.querySelectorAll("li.entry")], copyRows=[...base.querySelectorAll("li.entry")];
   realRows.forEach((r,i)=>{ const b=r.getBoundingClientRect();
-    if(b.bottom<-80||b.top>H+80){ const sp=document.createElement("li"); sp.style.cssText=`display:block;height:${b.height}px;border:0;padding:0;margin:0;list-style:none`; copyRows[i].replaceWith(sp); } });
+    if(b.bottom<-80||b.top>H+80){ const sp=document.createElement("li"); sp.style.cssText=`display:block;height:${b.height}px;border:0;padding:0;margin:0;list-style:none`; copyRows[i].replaceWith(sp); }
+    else if(!r.classList.contains("open")){ const inner=copyRows[i].querySelector(".panel > .inner"); if(inner) inner.innerHTML=""; } });   /* closed panels have no height: their contents only cost nodes */
+  base.querySelectorAll("img").forEach(i=>{ i.loading="eager"; });
   base.style.cssText=`position:absolute;margin:0;left:${R.left}px;top:${R.top}px;width:${R.width}px;max-width:none;visibility:visible`;
-  /* lay it out once to pin the sticky bars where they currently show */
+  /* lay it out once to pin the sticky bars: un-stick the copies first (inside
+     a tile they would stick to the tile), then shift each to where the real
+     one is showing */
   const probe=document.createElement("div"); probe.className="eg-tile"; probe.style.cssText=`left:0;top:0;width:${W}px;height:${H}px`;
   probe.appendChild(base); ov.appendChild(probe);
-  /* un-stick the copies first (inside a tile they would stick to the tile,
-     not the screen), then measure each one's natural place and shift it to
-     where the real one is showing */
   const pairs=realSticky.map((e,i)=>[e,base.querySelector(`[data-egg-sticky="${i}"]`)]).filter(([,c])=>c);
   pairs.forEach(([,c])=>{ c.removeAttribute("data-egg-sticky"); c.style.position="relative"; c.style.top="0"; c.style.zIndex="5"; });
   pairs.forEach(([e,c])=>{ c.style.transform=`translateY(${e.getBoundingClientRect().top-c.getBoundingClientRect().top}px)`; });
   probe.remove();
-  /* cut into tiles */
+
+  /* the stage: a faint prism behind, the turning group of tiles, seams on top */
+  const prism=document.createElement("i"); prism.className="eg-prism"; ov.appendChild(prism);
+  const spin=document.createElement("div"); spin.className="eg-spin"; ov.appendChild(spin);
   const cols=W<=620?2:4, rows=3, tw=W/cols, th=H/rows, tiles=[];
   for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
     const t=document.createElement("div"); t.className="eg-tile";
     t.style.cssText=`left:${c*tw}px;top:${r*th}px;width:${tw+1}px;height:${th+1}px`;
     const copy=base.cloneNode(true); copy.style.left=`${R.left-c*tw}px`; copy.style.top=`${R.top-r*th}px`;
-    t.appendChild(copy); ov.appendChild(t); tiles.push({t,r,c});
+    t.appendChild(copy);
+    t.insertAdjacentHTML("beforeend",'<i class="eg-glass"></i><i class="eg-glint"></i><i class="eg-edge"></i>');
+    spin.appendChild(t); tiles.push({t,r,c});
   }
+  const seams=[];
+  for(let c=1;c<cols;c++){ const s=document.createElement("i"); s.className="eg-seam v"; s.style.cssText=`left:${c*tw-1}px`; ov.appendChild(s); seams.push(s); }
+  for(let r=1;r<rows;r++){ const s=document.createElement("i"); s.className="eg-seam h"; s.style.cssText=`top:${r*th-1}px`; ov.appendChild(s); seams.push(s); }
   wrap.style.visibility="hidden";
-  const spin=document.createElement("div"); spin.className="eg-spin"; tiles.forEach(({t})=>spin.appendChild(t)); ov.appendChild(spin);
-  const D=4400, EASE="cubic-bezier(.45,0,.25,1)";       /* 30% slower than first built */
-  const EDGE0="0 0 0 0 rgba(255,255,255,0), 0 0 0 0 rgba(210,230,255,0)",
-        EDGE=(a,g)=>`0 0 0 1px rgba(255,255,255,${a}), 0 0 ${g}px 2px rgba(210,230,255,${a*.6})`;   /* the film's silver-white edges */
-  tiles.forEach(({t,r,c},i)=>{
-    const dx=(c+.5-cols/2)*(W<=620?70:90), dy=(r+.5-rows/2)*70, s=i%2?-1:1;
-    const tilt=(i*47%60)-30, z=((i*73)%300)-120, flip=(i%3===0);
-    t.animate([
-      {transform:"none",boxShadow:EDGE0},
-      {transform:`translate3d(${dx*.6}px,${dy*.6}px,${z*.5}px) rotateY(${tilt}deg) rotateX(${-tilt*.6}deg)`,boxShadow:EDGE(.6,16),offset:.22},
-      {transform:`translate3d(${dx}px,${dy}px,${z}px) rotateY(${flip?180*s:tilt*1.6}deg) rotateZ(${tilt*.5}deg) scale(.92)`,boxShadow:EDGE(.8,24),offset:.5},
-      {transform:`translate3d(${dx*.5}px,${dy*.5}px,${z*.3}px) rotateY(${flip?360*s:-tilt}deg) rotateZ(${-tilt*.3}deg)`,boxShadow:EDGE(.55,16),offset:.76},
-      {transform:"none",boxShadow:EDGE0}],{duration:D,easing:EASE,fill:"forwards"});
-  });
-  spin.animate([{transform:"rotate(0deg) scale(1)"},{transform:"rotate(18deg) scale(.86)",offset:.4},{transform:"rotate(-8deg) scale(.9)",offset:.7},{transform:"rotate(0deg) scale(1)"}],
-               {duration:D,easing:EASE,fill:"forwards"}).finished.then(()=>{ if(!isDone()) finish(); },()=>{});
+
+  /* start a frame after building, so the build and the first frame of motion don't share a frame */
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    if(isDone()) return;
+    const CRACK=350, SPLIT=950, KALEIDO=1700, FOLD=1150, SEAL=450, D=CRACK+SPLIT+KALEIDO+FOLD+SEAL;   /* 4600ms */
+    const o=x=>x/D;                                                  /* ms to keyframe offset */
+    /* crack: the page holds, seams draw outward from the centre */
+    seams.forEach((s,i)=>s.animate([{opacity:0,transform:s.classList.contains("v")?"scaleY(0)":"scaleX(0)"},
+      {opacity:.9,transform:"scale(1)",offset:o(CRACK)/o(CRACK+250)},{opacity:.35,transform:"scale(1)"}],{duration:CRACK+250,delay:i*40,easing:"ease-out",fill:"forwards"}));
+    prism.animate([{opacity:0,rotate:"0deg"},{opacity:.12,rotate:"40deg",offset:.35},{opacity:.12,rotate:"110deg",offset:.75},{opacity:0,rotate:"150deg"}],{duration:D,easing:"linear",fill:"forwards"});
+    /* the tiles: hinge on the seam nearest the centre; left and right mirror each other */
+    const midC=(cols-1)/2, midR=(rows-1)/2;
+    tiles.forEach(({t,r,c})=>{
+      const left=c<midC, side=left?1:-1;                           /* +1 left half, -1 right half */
+      t.style.transformOrigin=`${left?"100%":"0%"} ${r<midR?"100%":r>midR?"0%":"50%"}`;
+      const dist=Math.abs(c-midC)+Math.abs(r-midR), stag=dist*70;
+      const a=35+((r*cols+Math.round(Math.abs(c-midC)))%3)*10;     /* 35, 45 or 55deg, same for a mirrored pair */
+      const rx=20*(r<midR?1:r>midR?-1:.4);
+      const centre=Math.abs(c-midC)<1 && r===Math.round(midR);
+      const split=`rotateY(${side*a}deg) rotateX(${rx}deg) translateZ(${-30-dist*12}px)`;
+      const kal=centre?`rotateY(${side*(a+180)}deg) rotateX(${rx*.5}deg) translateZ(-20px)`:`rotateY(${side*a*.7}deg) rotateX(${rx*.6}deg) translateZ(${-20-dist*10}px)`;
+      const foldStart=CRACK+SPLIT+KALEIDO, foldStag=(2-Math.min(2,dist))*90;   /* outside-in */
+      t.animate([
+        {transform:"none",offset:0},
+        {transform:"none",offset:o(CRACK+stag)},
+        {transform:split,offset:o(CRACK+SPLIT)},
+        {transform:kal,offset:o(CRACK+SPLIT+KALEIDO)},
+        {transform:kal,offset:o(foldStart+foldStag)},
+        {transform:"none",offset:o(foldStart+FOLD)},
+        {transform:"none",offset:1}],
+        {duration:D,easing:"cubic-bezier(.45,0,.25,1)",fill:"forwards"});
+      t.querySelector(".eg-edge").animate([{opacity:0},{opacity:1,offset:o(CRACK+SPLIT*.5)},{opacity:1,offset:o(foldStart+FOLD*.6)},{opacity:0,offset:o(foldStart+FOLD)},{opacity:0}],{duration:D,fill:"forwards"});
+      /* the glint crosses the whole screen: later tiles catch it later */
+      t.querySelector(".eg-glint").animate([{transform:"translateX(-150%) rotate(25deg)",opacity:0},{opacity:1,offset:.2},{opacity:1,offset:.8},{transform:"translateX(300%) rotate(25deg)",opacity:0}],
+        {duration:1400,delay:CRACK+SPLIT*.4+(c+r)*90,easing:"cubic-bezier(.45,0,.25,1)"});
+    });
+    /* the whole view: a breath before the split, a slow turn, back to flat */
+    const spinA=spin.animate([{transform:"rotate(0deg) scale(1)"},{transform:"rotate(0deg) scale(.985)",offset:o(CRACK)},
+      {transform:"rotate(12deg) scale(.88)",offset:o(CRACK+SPLIT+KALEIDO*.45)},{transform:"rotate(-6deg) scale(.88)",offset:o(CRACK+SPLIT+KALEIDO)},
+      {transform:"rotate(0deg) scale(1.006)",offset:o(CRACK+SPLIT+KALEIDO+FOLD)},{transform:"rotate(0deg) scale(1)"}],
+      {duration:D,easing:"cubic-bezier(.45,0,.25,1)",fill:"forwards"});
+    /* seal: the seams flash once to cover the swap back */
+    seams.forEach(s=>s.animate([{opacity:.35},{opacity:.85,offset:.3},{opacity:0}],{duration:SEAL,delay:D-SEAL,easing:"ease-out",fill:"forwards"}));
+    spinA.finished.then(()=>{ if(!isDone()) finish(); },()=>{});
+  }));
 }
 
 /* Scarlet Witch, about 7.8s.
@@ -3065,7 +3182,7 @@ function eggAllDay(){
   if(!s.total){ toast("Nothing logged yet. I could do this all day, but there’s nothing to show."); return; }
   const cells=[];
   for(let i=41;i>=0;i--){
-    const d=new Date(Date.now()-i*864e5).toISOString().slice(0,10);
+    const d=ymd(new Date(Date.now()-i*864e5));
     cells.push(`<i class="${s.days.has(d)?"on":""}" title="${d}"></i>`);
   }
   readout("I can do this all day",`
@@ -3082,7 +3199,7 @@ function eggBinge(){
   const P=pool(), out=P.filter(m=>m.r<=today());
   const left=out.filter(m=>!isDone(m));
   const mins=left.reduce((s,m)=>s+Math.max(0,totalMinutes(m)-minutesSeen(m)),0);
-  const cut=new Date(Date.now()-90*864e5).toISOString().slice(0,10);
+  const cut=ymd(new Date(Date.now()-90*864e5));
   const recent=[].concat(...P.filter(started).map(views)).filter(d=>d>=cut).length;
   const perWeek=recent/13;
   const weeks=perWeek>0.2 ? Math.ceil(left.length/perWeek) : 0;
@@ -3330,6 +3447,13 @@ addEventListener("error",e=>{ if(!document.querySelector("li.entry")) bootFailed
   render(); syncStick(); searchMode(); applyPrefs();
   INTRO.ready();                               /* list is built: the intro may start its flip */
   SYNC.init();                                 /* pull from the Gist if this device syncs */
+  /* ask the browser not to clear this site's storage when space runs low.
+     Silent on Chrome, Edge and Safari; Firefox asks with a pop-up, so it's skipped there */
+  try{ if(navigator.storage && navigator.storage.persist && !/Firefox\//.test(navigator.userAgent))
+    navigator.storage.persisted().then(p=>p||navigator.storage.persist()).catch(()=>{}); }catch(e){}
+  /* left open overnight: on coming back, dates ("out now", countdowns) move on */
+  let shownDay=today();
+  document.addEventListener("visibilitychange",()=>{ if(!document.hidden && today()!==shownDay){ shownDay=today(); render(); } });
   INTRO.done.then(decodeTitle);                /* decode once the title is actually visible */
   if(r.title){
     openIds.add(r.title); render();
