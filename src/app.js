@@ -2454,6 +2454,150 @@ function glitchTitles(){
     if(f>15){ clearInterval(t); els.forEach((e,i)=>e.textContent=old[i]); }
   },55);
 }
+/* ---------- big-screen eggs: shared overlay plumbing ----------
+   One at a time. Each builds a fixed overlay, animates only transform and
+   opacity, and removes itself; a tap or key ends it early. */
+let eggBusy=false;
+function eggOverlay(cls,cleanup){
+  if(eggBusy) return null;
+  eggBusy=true;
+  const ov=document.createElement("div"); ov.className="egg "+cls; ov.setAttribute("aria-hidden","true");
+  document.body.appendChild(ov);
+  let done=false;
+  const finish=()=>{
+    if(done) return; done=true; eggBusy=false;
+    removeEventListener("pointerdown",finish,true); removeEventListener("keydown",finish,true);
+    ov.getAnimations({subtree:true}).forEach(a=>a.cancel());
+    ov.remove(); if(cleanup) cleanup();
+  };
+  setTimeout(()=>{ addEventListener("pointerdown",finish,true); addEventListener("keydown",finish,true); },300);
+  return {ov,finish,isDone:()=>done};
+}
+
+/* The Gauntlet, about 8s: the screen darkens and a golden gauntlet arc draws
+   itself; the six stones streak in one by one from the edges and seat
+   themselves; they pulse together as light rays spill out; one shockwave
+   (a single, gentle flash) releases, and the phase bar lights up box by box
+   as the darkness lifts. */
+function gauntlet(){
+  if(reduced()){ toast("The stones are ready. Turn effects on in Settings to see them."); return; }
+  const E=eggOverlay("egg-gauntlet"); if(!E) return;
+  const {ov,finish,isDone}=E;
+  const W=innerWidth, H=innerHeight, cx=W/2, cy=H*.46, R=Math.min(W*.3,H*.26,190), S=R*.2;
+  const STONES=[["Space","#2d7bff"],["Mind","#ffd23d"],["Reality","#ff2d3a"],["Power","#a24bff"],["Time","#2ee87a"],["Soul","#ff8a1f"]];
+  /* five knuckle sockets along the arc, the sixth on the back of the hand */
+  const seats=[-160,-125,-90,-55,-20].map(a=>[cx+R*Math.cos(a*Math.PI/180), cy+R*Math.sin(a*Math.PI/180)]).concat([[cx,cy+R*.42]]);
+  const arcD=`M ${cx+R*Math.cos(-170*Math.PI/180)} ${cy+R*Math.sin(-170*Math.PI/180)} A ${R} ${R} 0 0 1 ${cx+R*Math.cos(-10*Math.PI/180)} ${cy+R*Math.sin(-10*Math.PI/180)}`;
+  ov.innerHTML=`<i class="eg-dim"></i><i class="eg-rays" style="left:${cx}px;top:${cy}px"></i>
+    <svg class="eg-arc" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+      <defs><linearGradient id="egGold" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#fff2b0"/><stop offset=".45" stop-color="#e9b43c"/><stop offset="1" stop-color="#8a5a12"/></linearGradient></defs>
+      <path d="${arcD}" fill="none" stroke="url(#egGold)" stroke-width="${S*.9}" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/>
+      <ellipse cx="${cx}" cy="${cy+R*.42}" rx="${S*1.15}" ry="${S*1.15}" fill="none" stroke="url(#egGold)" stroke-width="${S*.4}" opacity="0"/>
+      ${seats.map(([x,y])=>`<circle cx="${x}" cy="${y}" r="${S*.62}" fill="#1a1206" stroke="url(#egGold)" stroke-width="${S*.18}" opacity="0"/>`).join("")}
+    </svg><i class="eg-ring" style="left:${cx}px;top:${cy}px"></i><i class="eg-flash"></i>`;
+  const $o=s=>ov.querySelector(s), dim=$o(".eg-dim"), rays=$o(".eg-rays"), arc=$o(".eg-arc path"),
+        plate=$o(".eg-arc ellipse"), sockets=[...ov.querySelectorAll(".eg-arc circle")], ring=$o(".eg-ring"), flash=$o(".eg-flash");
+  dim.animate([{opacity:0},{opacity:.86}],{duration:800,fill:"forwards",easing:"ease-out"});
+  arc.animate([{strokeDashoffset:1},{strokeDashoffset:0}],{duration:900,delay:400,fill:"forwards",easing:"cubic-bezier(.4,0,.2,1)"});
+  [plate,...sockets].forEach((s,i)=>s.animate([{opacity:0},{opacity:1}],{duration:400,delay:900+i*60,fill:"forwards"}));
+  /* each stone streaks in from its own edge along a curve, with a short trail */
+  const from=[[-.15,.2],[.5,-.2],[1.15,.15],[-.15,.85],[1.15,.9],[.5,1.2]];
+  const stones=STONES.map(([,c],i)=>{
+    const [tx,ty]=seats[i], fx=from[i][0]*W, fy=from[i][1]*H, mx=(fx+tx)/2+(ty-fy)*.25, my=(fy+ty)/2+(fx-tx)*.25;
+    const at=(x,y,k)=>`translate(${x-S/2}px,${y-S/2}px) scale(${k})`;
+    const path=[{transform:at(fx,fy,.5),opacity:0},{transform:at(mx,my,1.1),opacity:1,offset:.55},{transform:at(tx,ty,1),opacity:1}];
+    const t0=1300+i*420;
+    [3,2,1].forEach(n=>{ const g=document.createElement("i"); g.className="eg-stone ghost"; g.style.cssText=`--c:${c};width:${S}px;height:${S}px`;
+      ov.appendChild(g); g.animate(path.map(f=>({...f,opacity:f.opacity*.18*n})),{duration:700,delay:t0+n*45,easing:"cubic-bezier(.3,.6,.2,1)"}); });
+    const st=document.createElement("i"); st.className="eg-stone"; st.style.cssText=`--c:${c};width:${S}px;height:${S}px`;
+    ov.appendChild(st);
+    st.animate(path,{duration:700,delay:t0,easing:"cubic-bezier(.3,.6,.2,1)",fill:"forwards"});
+    st.animate([{boxShadow:`0 0 0 0 ${c}`},{boxShadow:`0 0 ${S*1.6}px ${S*.5}px ${c}`},{boxShadow:`0 0 ${S*.7}px ${S*.15}px ${c}`}],
+               {duration:600,delay:t0+620,fill:"forwards"});   /* seats with a flare */
+    return st;
+  });
+  /* all six pulse together; rays spill out behind */
+  const P=4000;
+  rays.animate([{opacity:0,transform:"translate(-50%,-50%) rotate(0deg) scale(.6)"},{opacity:.9,transform:"translate(-50%,-50%) rotate(40deg) scale(1)"}],
+               {duration:1600,delay:P,fill:"forwards",easing:"ease-in-out"});
+  stones.forEach(st=>st.animate([{scale:"1"},{scale:"1.3"},{scale:"1"},{scale:"1.35"},{scale:"1"}],{duration:1400,delay:P,easing:"ease-in-out"}));
+  ov.animate([{translate:"0 0"},{translate:"2px -1px"},{translate:"-2px 1px"},{translate:"1px 2px"},{translate:"0 0"}],{duration:300,delay:P+1350,iterations:2});
+  /* release: one soft flash and a shockwave; the darkness lifts */
+  const Rel=P+1900;
+  flash.animate([{opacity:0},{opacity:.32},{opacity:0}],{duration:420,delay:Rel});
+  ring.animate([{opacity:.95,transform:"translate(-50%,-50%) scale(.1)"},{opacity:0,transform:"translate(-50%,-50%) scale(9)"}],
+               {duration:1300,delay:Rel,easing:"cubic-bezier(.1,.7,.3,1)",fill:"forwards"});
+  dim.animate([{opacity:.86},{opacity:0}],{duration:1000,delay:Rel+150,fill:"forwards",easing:"ease-in-out"});
+  rays.animate([{opacity:.9},{opacity:0}],{duration:700,delay:Rel+100,fill:"forwards"});
+  /* the phase bar lights up box by box, in its own colours */
+  [...document.querySelectorAll("#constellation .seg")].forEach((seg,i)=>{
+    const c=(PHASES[i+1]||PHASES[1]).c;
+    seg.animate([{boxShadow:`0 0 0 0 ${c}00`},{boxShadow:`0 0 22px 3px ${c}`,offset:.3},{boxShadow:`0 0 0 0 ${c}00`}],
+                {duration:1100,delay:Rel+250+i*180,easing:"ease-out"});
+  });
+  /* the gauntlet and stones fade last */
+  const out=[$o(".eg-arc"),...stones].map(e=>e.animate([{opacity:1},{opacity:0}],{duration:900,delay:Rel+600,fill:"forwards"}));
+  Promise.all(out.map(a=>a.finished)).then(()=>{ if(!isDone()) finish(); },()=>{});
+}
+
+/* Mirror Dimension, about 3.4s: the page itself shatters into tiles that fold
+   and spin like a kaleidoscope, then snap back. The tiles are copies of only
+   what is on screen (off-screen rows become empty spacers of the same height,
+   so phones aren't copying the whole list a dozen times); sticky bars are
+   pinned where they are showing. The real page is hidden underneath and
+   reappears exactly where it was. */
+function mirrorDimension(){
+  if(reduced()){ toast("The mirror dimension needs effects on. Turn them on in Settings."); return; }
+  const wrap=document.querySelector(".wrap");
+  const E=eggOverlay("egg-mirror",()=>{ wrap.style.visibility=""; }); if(!E) return;
+  const {ov,finish,isDone}=E;
+  const W=innerWidth, H=innerHeight, R=wrap.getBoundingClientRect();
+  /* build one trimmed copy of what is on screen (sticky bars tagged first, so
+     each can be matched to its copy after rows are swapped for spacers) */
+  const realSticky=[...wrap.querySelectorAll("*")].filter(e=>getComputedStyle(e).position==="sticky");
+  realSticky.forEach((e,i)=>e.setAttribute("data-egg-sticky",i));
+  const base=wrap.cloneNode(true);
+  realSticky.forEach(e=>e.removeAttribute("data-egg-sticky"));
+  const realRows=[...wrap.querySelectorAll("li.entry")], copyRows=[...base.querySelectorAll("li.entry")];
+  realRows.forEach((r,i)=>{ const b=r.getBoundingClientRect();
+    if(b.bottom<-80||b.top>H+80){ const sp=document.createElement("li"); sp.style.cssText=`display:block;height:${b.height}px;border:0;padding:0;margin:0;list-style:none`; copyRows[i].replaceWith(sp); } });
+  base.style.cssText=`position:absolute;margin:0;left:${R.left}px;top:${R.top}px;width:${R.width}px;max-width:none;visibility:visible`;
+  /* lay it out once to pin the sticky bars where they currently show */
+  const probe=document.createElement("div"); probe.className="eg-tile"; probe.style.cssText=`left:0;top:0;width:${W}px;height:${H}px`;
+  probe.appendChild(base); ov.appendChild(probe);
+  /* un-stick the copies first (inside a tile they would stick to the tile,
+     not the screen), then measure each one's natural place and shift it to
+     where the real one is showing */
+  const pairs=realSticky.map((e,i)=>[e,base.querySelector(`[data-egg-sticky="${i}"]`)]).filter(([,c])=>c);
+  pairs.forEach(([,c])=>{ c.removeAttribute("data-egg-sticky"); c.style.position="relative"; c.style.top="0"; c.style.zIndex="5"; });
+  pairs.forEach(([e,c])=>{ c.style.transform=`translateY(${e.getBoundingClientRect().top-c.getBoundingClientRect().top}px)`; });
+  probe.remove();
+  /* cut into tiles */
+  const cols=W<=620?2:4, rows=3, tw=W/cols, th=H/rows, tiles=[];
+  for(let r=0;r<rows;r++) for(let c=0;c<cols;c++){
+    const t=document.createElement("div"); t.className="eg-tile";
+    t.style.cssText=`left:${c*tw}px;top:${r*th}px;width:${tw+1}px;height:${th+1}px`;
+    const copy=base.cloneNode(true); copy.style.left=`${R.left-c*tw}px`; copy.style.top=`${R.top-r*th}px`;
+    t.appendChild(copy); ov.appendChild(t); tiles.push({t,r,c});
+  }
+  wrap.style.visibility="hidden";
+  const spin=document.createElement("div"); spin.className="eg-spin"; tiles.forEach(({t})=>spin.appendChild(t)); ov.appendChild(spin);
+  const D=3400, EASE="cubic-bezier(.45,0,.25,1)";
+  tiles.forEach(({t,r,c},i)=>{
+    const dx=(c+.5-cols/2)*(W<=620?70:90), dy=(r+.5-rows/2)*70, s=i%2?-1:1;
+    const tilt=(i*47%60)-30, z=((i*73)%300)-120, flip=(i%3===0);
+    t.animate([
+      {transform:"none",boxShadow:"0 0 0 0 rgba(255,140,40,0)"},
+      {transform:`translate3d(${dx*.6}px,${dy*.6}px,${z*.5}px) rotateY(${tilt}deg) rotateX(${-tilt*.6}deg)`,boxShadow:"0 0 18px 1px rgba(255,140,40,.55)",offset:.22},
+      {transform:`translate3d(${dx}px,${dy}px,${z}px) rotateY(${flip?180*s:tilt*1.6}deg) rotateZ(${tilt*.5}deg) scale(.92)`,boxShadow:"0 0 26px 2px rgba(255,120,30,.7)",offset:.5},
+      {transform:`translate3d(${dx*.5}px,${dy*.5}px,${z*.3}px) rotateY(${flip?360*s:-tilt}deg) rotateZ(${-tilt*.3}deg)`,boxShadow:"0 0 18px 1px rgba(255,140,40,.5)",offset:.76},
+      {transform:"none",boxShadow:"0 0 0 0 rgba(255,140,40,0)"}],{duration:D,easing:EASE,fill:"forwards"});
+  });
+  spin.animate([{transform:"rotate(0deg) scale(1)"},{transform:"rotate(18deg) scale(.86)",offset:.4},{transform:"rotate(-8deg) scale(.9)",offset:.7},{transform:"rotate(0deg) scale(1)"}],
+               {duration:D,easing:EASE,fill:"forwards"}).finished.then(()=>{ if(!isDone()) finish(); },()=>{});
+}
+
 function oneInFourteenMillion(){
   const un=pool().filter(m=>m.r<=today()&&!isDone(m));
   if(!un.length){ toast("I looked forward. All of them are watched."); return; }
@@ -2615,6 +2759,10 @@ const EGGS={
   "worthy":        {say:"Whosoever holds this hammer, if they be worthy…", run:worthy, ms:4600},
   "14000605":      {say:"One. We win in one.",                          run:oneInFourteenMillion},
   "pym":           {say:"Shrink.",                                      run:pym},
+  "gauntlet":      {say:"I am inevitable.",                             run:gauntlet, ms:4200},
+  "infinity stones":{say:"I am inevitable.",                            run:gauntlet, ms:4200},
+  "mirror dimension":{say:"You think you know how the world works?",    run:mirrorDimension},
+  "strange":       {say:"You think you know how the world works?",      run:mirrorDimension},
   "ultron":        {say:"There are no strings on me.",                  run:glitchTitles},
   "nexus":         {say:"Found the branch. Switching to chronology.",   run:nexus},
   "3000":          {say:"",                                             run:()=>{
@@ -2624,7 +2772,7 @@ const EGGS={
   "jarvis":        {say:"", run:()=>{
     const groups=[
       ["Does something useful", ["all day","binge","tonight","time heist","canon","nexus","assemble","14000605","3000","wakanda","tva"]],
-      ["Just for the look of it", ["snap","blip","we have a hulk","i am iron man","bifrost","pym","ultron","puny god","on your left","i am groot","dormammu","worthy"]]
+      ["Just for the look of it", ["snap","blip","gauntlet","mirror dimension","we have a hulk","i am iron man","bifrost","pym","ultron","puny god","on your left","i am groot","dormammu","worthy"]]
     ];
     readout("At your service",
       groups.map(([h,list])=>`<p class="cmdhead">${h}</p><div class="cmds">${
