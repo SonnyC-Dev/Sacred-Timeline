@@ -1997,9 +1997,33 @@ function renderSettings(){
 const scrollMem={list:0,stats:0,settings:0};
 function syncStick(){
   const c=$("#controls");
-  document.documentElement.style.setProperty("--stick", (c.offsetHeight||52)+"px");
+  const tuck=c.classList.contains("tucked") ? parseFloat(c.style.getPropertyValue("--tuck"))||0 : 0;
+  document.documentElement.style.setProperty("--stick", ((c.offsetHeight||52)-tuck)+"px");
 }
 addEventListener("resize",syncStick);
+
+/* phones: tuck the filter row away while scrolling down the list, bring it
+   back on any scroll up (see the styles: only the bar's background moves, so
+   nothing in the list shifts). Never while a filter is being used. */
+(()=>{
+  const c=$("#controls"), mq=matchMedia("(max-width:620px)");
+  let lastY=scrollY, tucked=false;
+  const set=on=>{
+    if(on===tucked) return; tucked=on;
+    if(on){ const f=c.querySelector(".filters").getBoundingClientRect(), q=$("#qfield").getBoundingClientRect();
+            c.style.setProperty("--tuck",Math.max(0,f.bottom-q.bottom)+"px"); }
+    c.classList.toggle("tucked",on); syncStick();
+  };
+  addEventListener("scroll",()=>{
+    const y=scrollY, dy=y-lastY, a=document.activeElement;
+    const busy=a && c.contains(a) && a!==$("#q");             /* a dropdown or switch is in use */
+    if(!mq.matches || !c.classList.contains("stuck") || busy) set(false);
+    else if(dy>6 && y>240) set(true);
+    else if(dy<-6) set(false);
+    lastY=y;
+  },{passive:true});
+  mq.addEventListener("change",()=>set(false));
+})();
 
 function setView(v,{push=true,restore=true}={}){
   if(v===state.view && push) return;

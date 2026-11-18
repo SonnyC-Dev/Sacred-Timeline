@@ -723,6 +723,26 @@ body.hulk:before{content:"";position:fixed;inset:0;z-index:54;pointer-events:non
 .phasestrip b{position:absolute;left:0;top:0;bottom:0;width:var(--pct,0%);border-radius:2px;
   background:var(--pc);box-shadow:0 0 6px var(--pc);transition:width .6s var(--ease)}
 
+/* phones: the filter row tucks away while scrolling down and returns on any
+   scroll up. The list never moves: the bar's height in the page stays the
+   same; only its painted background (moved onto ::before) slides up to sit
+   under the search box, the filter row fades, and the area it used becomes
+   see-through and tap-through. The phase strip and sticky headings follow. */
+@media (max-width:620px){
+  .controls{background:none;border-bottom-color:transparent}
+  .controls,.controls.stuck{box-shadow:none}
+  .controls::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;
+    background:linear-gradient(180deg,rgba(5,6,10,.94),rgba(5,6,10,.78));border-bottom:1px solid var(--line-soft);
+    transition:transform .32s var(--ease),box-shadow .3s var(--ease)}
+  .controls.stuck::before{box-shadow:0 12px 30px -18px #000,0 1px 0 0 var(--line-soft)}
+  .controls .filters,.controls .phasestrip{transition:opacity .25s var(--ease),transform .32s var(--ease)}
+  .controls.tucked{pointer-events:none}
+  .controls.tucked #qfield{pointer-events:auto}
+  .controls.tucked::before,.controls.tucked .phasestrip{transform:translateY(calc(-1 * var(--tuck,0px)))}
+  .controls.tucked .filters{opacity:0;transform:translateY(-10px)}
+  .group-head{transition:top .32s var(--ease)}
+}
+
 /* ============================ PHONE PASS ============================
    Phone and touch refinements. Everything here is scoped so desktop and laptop
    render exactly as before: layout changes sit under max-width:620px, finger-
