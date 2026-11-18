@@ -1498,6 +1498,9 @@ function renderTally(){
     const fill=b.querySelector(".fill");
 
     fill.style.width=pct+"%";
+    /* the slim strip in the sticky bar mirrors the phase bar */
+    const strip=document.querySelector(`#phasestrip i[data-p="${p}"]`);
+    if(strip){ strip.style.setProperty("--pc",c); strip.style.setProperty("--pct",pct+"%"); }
     fill.classList.toggle("zero",!done);
     fill.style.background = full
       ? `linear-gradient(120deg,${c2},${c})`
@@ -2525,38 +2528,54 @@ function eggOverlay(cls,cleanup){
   return {ov,finish,isDone:()=>done};
 }
 
-/* The Gauntlet, about 8.5s. The scene darkens (warm centre, cool edges) and a
-   bevelled gold arc draws itself while breathing in. The six stones are born
-   in the phase bar: each box fills with its colour, a gem condenses in it,
-   lifts off and arcs down to its socket, turning from its phase colour to its
-   true stone colour on the way, then overshoots slightly and settles with a
-   flare. They
-   pulse in a wave round the arc as light rays turn and a gold bloom builds;
-   one soft flash and a double shockwave release it, and the phase bar lights
-   up box by box as the darkness lifts. */
+/* The Gauntlet, about 8.3s, in three beats that never share space or time:
+     gather      each phase box lights up, then its light pinches down to a
+                 point, leaving a faint outline like a spent socket
+     crystallise the point drops into a clear row just below the bar and
+                 grows into a gem there (never on top of the box)
+     flight      through an empty band to a gauntlet placed lower down: each
+                 stone leaves straight down and arrives along its socket's
+                 normal, so it never slides along the gold; launches go
+                 outside-in, alternating sides, crown, then the Soul stone's
+                 slow hero swoop round the outside and up into the plate.
+                 Colour shifts from phase to true stone colour in flight.
+   Then: a halo wave, an energy pulse along the band, beams converging on the
+   plate, one soft flash and a double shockwave from the plate; the dark
+   lifts and the drained boxes refill left to right.
+   Glow is layered light (wide halo, white-hot core, glints, a light trail,
+   sparkles, colour spilling onto the metal), all static gradients with only
+   opacity and transform animated. Source: the phase bar, or the slim phase
+   strip in the sticky bar when scrolled; otherwise it scrolls up first. */
 function gauntlet(){
   if(reduced()){ toast("The stones are ready. Turn effects on in Settings to see them."); return; }
-  /* the stones come out of the phase bar, so it must be on screen: if it is
-     scrolled away, glide back up first */
   const bar=document.getElementById("constellation"), bb=bar&&bar.getBoundingClientRect();
-  if(bb && (bb.top<0 || bb.bottom>innerHeight) && !gauntlet.scrolling){
+  const strip=document.getElementById("phasestrip"), stuck=document.getElementById("controls").classList.contains("stuck");
+  let src=null, fromBar=false;
+  if(bb && bb.top>=0 && bb.bottom<=innerHeight){ src=[...bar.querySelectorAll(".seg")].map(e=>e.getBoundingClientRect()); fromBar=true; }
+  else if(stuck && strip) src=[...strip.querySelectorAll("i")].map(e=>e.getBoundingClientRect());
+  if(!src || src.length<6){
+    if(gauntlet.scrolling) return;
     gauntlet.scrolling=true; scrollTo({top:0,behavior:"smooth"});
     setTimeout(()=>{ gauntlet.scrolling=false; gauntlet(); },750);
     return;
   }
-  const E=eggOverlay("egg-gauntlet"); if(!E) return;
+  const segAnims=[];
+  const E=eggOverlay("egg-gauntlet",()=>segAnims.forEach(a=>a.cancel())); if(!E) return;
   const {ov,finish,isDone}=E;
-  const W=innerWidth, H=innerHeight, cx=W/2, cy=H*.46, R=Math.min(W*.3,H*.26,190), S=R*.21;
-  const rad=d=>d*Math.PI/180;
+
+  /* layout: the gauntlet sits below the source with a clear band between */
+  const W=innerWidth, H=innerHeight, srcBottom=Math.max(...src.map(b=>b.bottom));
+  let R=Math.min(W*.34,190,(H-srcBottom-180)/1.76), clear=Math.max(90,.9*R);
+  R=Math.min(R,(H-srcBottom-90-clear)/1.76);
+  const tight=R<60; if(tight){ clear=60; R=Math.max(44,Math.min(W*.3,(H-srcBottom-150)/1.76)); }
+  const cx=W/2, cy=srcBottom+clear+R, S=R*.21, plateY=cy+R*.42, stageY=srcBottom+.9*S;
+  ov.style.setProperty("--cx",cx+"px"); ov.style.setProperty("--cy",cy+"px"); ov.style.setProperty("--py",plateY+"px");
+  const rad=d=>d*Math.PI/180, xy=(a,r)=>[cx+r*Math.cos(rad(a)), cy+r*Math.sin(rad(a))];
   const STONES=["#2d7bff","#ffd23d","#ff2d3a","#a24bff","#2ee87a","#ff8a1f"];   /* space mind reality power time soul */
-  /* seats in polar form round the centre: five knuckles on the arc, Soul on the back plate */
   const seats=[[-160,R],[-125,R],[-90,R],[-55,R],[-20,R],[90,R*.42]];
-  const xy=(a,r)=>[cx+r*Math.cos(rad(a)), cy+r*Math.sin(rad(a))];
-  const p=a=>xy(a,R);
-  const [ax,ay]=p(-172), [bx,by]=p(-8);
-  const arc=`M ${ax} ${ay} A ${R} ${R} 0 0 1 ${bx} ${by}`;
-  ov.innerHTML=`<i class="eg-dim"></i><i class="eg-bloom" style="left:${cx}px;top:${cy}px"></i>
-    <i class="eg-rays" style="left:${cx}px;top:${cy}px"></i>
+  const PHASE_TO_SEAT={1:0,3:1,6:2,2:3,4:4,5:5};
+  const [ax,ay]=xy(-172,R), [bx,by]=xy(-8,R), arcD=`M ${ax} ${ay} A ${R} ${R} 0 0 1 ${bx} ${by}`;
+  ov.innerHTML=`<i class="eg-dim"></i><i class="eg-bloom"></i><i class="eg-rays"></i>
     <svg class="eg-arc" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
       <defs>
         <linearGradient id="egGold" x1="0" y1="0" x2="0" y2="1">
@@ -2566,121 +2585,146 @@ function gauntlet(){
           <stop offset="0" stop-color="#2a1d08"/><stop offset=".7" stop-color="#120c04"/><stop offset="1" stop-color="#5a3c0e"/></radialGradient>
       </defs>
       <g class="eg-metal">
-        <path d="${arc}" fill="none" stroke="#2b1a05" stroke-width="${S*1.05}" stroke-linecap="round" transform="translate(0 ${S*.12})" opacity=".8" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/>
-        <path d="${arc}" fill="none" stroke="url(#egGold)" stroke-width="${S*.92}" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/>
-        <path d="${arc}" fill="none" stroke="#fff7d6" stroke-width="${S*.12}" stroke-linecap="round" transform="translate(0 ${-S*.28})" opacity=".55" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/>
-        <circle cx="${cx}" cy="${cy+R*.42}" r="${S*1.2}" fill="url(#egSock)" stroke="url(#egGold)" stroke-width="${S*.42}" opacity="0"/>
-        ${seats.slice(0,5).map(([a])=>{ const [x,y]=p(a); return `<circle cx="${x}" cy="${y}" r="${S*.64}" fill="url(#egSock)" stroke="url(#egGold)" stroke-width="${S*.2}" opacity="0"/>`; }).join("")}
+        <path d="${arcD}" fill="none" stroke="#6e4710" stroke-width="${S*1.25}" stroke-linecap="round" opacity=".35" class="eg-under" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/>
+        <path d="${arcD}" fill="none" stroke="#2b1a05" stroke-width="${S*1.05}" stroke-linecap="round" transform="translate(0 ${S*.12})" opacity=".8" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/>
+        <path d="${arcD}" fill="none" stroke="url(#egGold)" stroke-width="${S*.92}" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/>
+        <path d="${arcD}" fill="none" stroke="#fff7d6" stroke-width="${S*.12}" stroke-linecap="round" transform="translate(0 ${-S*.28})" opacity=".55" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/>
+        <circle cx="${cx}" cy="${plateY}" r="${S*1.2}" fill="url(#egSock)" stroke="url(#egGold)" stroke-width="${S*.42}" opacity="0"/>
+        ${seats.slice(0,5).map(([a])=>{ const [x,y]=xy(a,R); return `<circle cx="${x}" cy="${y}" r="${S*.64}" fill="url(#egSock)" stroke="url(#egGold)" stroke-width="${S*.2}" opacity="0"/>`; }).join("")}
       </g>
-    </svg><i class="eg-ring" style="left:${cx}px;top:${cy}px"></i><i class="eg-ring thin" style="left:${cx}px;top:${cy}px"></i><i class="eg-flash"></i>`;
+      <path class="eg-energy" d="${arcD}" fill="none" stroke="#fff7d6" stroke-width="${S*.1}" stroke-linecap="round" pathLength="1" stroke-dasharray=".08 .92" stroke-dashoffset="1" opacity="0"/>
+    </svg><i class="eg-ring"></i><i class="eg-ring thin"></i><i class="eg-flash"></i>`;
   const $o=s=>ov.querySelector(s), dim=$o(".eg-dim"), bloom=$o(".eg-bloom"), rays=$o(".eg-rays"), metal=$o(".eg-metal"),
         strokes=[...ov.querySelectorAll(".eg-metal path")], plates=[...ov.querySelectorAll(".eg-metal circle")],
-        rings=[...ov.querySelectorAll(".eg-ring")], flash=$o(".eg-flash");
-  const SMOOTH="cubic-bezier(.65,0,.35,1)";
-  dim.animate([{opacity:0},{opacity:.9}],{duration:900,fill:"forwards",easing:"ease-out"});
-  /* the gauntlet draws on while breathing in */
+        energy=$o(".eg-energy"), rings=[...ov.querySelectorAll(".eg-ring")], flash=$o(".eg-flash");
+  const SMOOTH="cubic-bezier(.65,0,.35,1)", el=(cls,css)=>{ const e=document.createElement("i"); e.className=cls; if(css) e.style.cssText=css; ov.appendChild(e); return e; };
+
+  /* the setting: dark, then the gauntlet draws on while breathing in */
+  dim.animate([{opacity:0},{opacity:.9}],{duration:700,fill:"forwards",easing:"ease-out"});
   metal.style.transformOrigin=`${cx}px ${cy}px`;
   metal.animate([{transform:"scale(.9)",opacity:.6},{transform:"scale(1)",opacity:1}],{duration:1500,delay:300,easing:"cubic-bezier(.2,.8,.3,1)",fill:"forwards"});
-  strokes.forEach(s=>s.animate([{strokeDashoffset:1},{strokeDashoffset:0}],{duration:1200,delay:400,fill:"forwards",easing:SMOOTH}));
+  strokes.forEach(s=>s.animate([{strokeDashoffset:1},{strokeDashoffset:0}],{duration:1200,delay:300,fill:"forwards",easing:SMOOTH}));
   plates.forEach((c,i)=>c.animate([{opacity:0,transform:"scale(.6)"},{opacity:1,transform:"scale(1)"}],
-    {duration:450,delay:1150+i*70,fill:"forwards",easing:"cubic-bezier(.2,.9,.3,1.3)"}));
-  rays.animate([{transform:"translate(-50%,-50%) rotate(0deg)"},{transform:"translate(-50%,-50%) rotate(90deg)"}],{duration:9000,easing:"linear",fill:"forwards"});
-  rays.animate([{opacity:0},{opacity:.35,offset:.4},{opacity:.95,offset:.85},{opacity:0}],{duration:6700,delay:1300,fill:"forwards"});
-  bloom.animate([{opacity:0,transform:"translate(-50%,-50%) scale(.5)"},{opacity:.85,transform:"translate(-50%,-50%) scale(1.15)"}],
-    {duration:4200,delay:1500,easing:"ease-in",fill:"forwards"});
+    {duration:450,delay:1050+i*70,fill:"forwards",easing:"cubic-bezier(.2,.9,.3,1.3)"}));
+  rays.animate([{transform:"translate(-50%,-50%) rotate(0deg)"},{transform:"translate(-50%,-50%) rotate(80deg)"}],{duration:9000,easing:"linear",fill:"forwards"});
 
-  /* stones move with the `translate` property and grow with `scale`: browsers
-     apply translate after scale, so growing (here and in the pulse) happens
-     on the spot instead of pushing the stone away from the corner */
-  /* the stones are born in the phase bar: in phase order, each box slowly
-     fills with its colour, a gem condenses in it and lifts off, then flies to
-     its socket on an outward arc, shifting from its phase colour to its true
-     stone colour on the way (phase 5's pink becomes the orange Soul stone) */
-  const PHASE_TO_SEAT={1:0,3:1,6:2,2:3,4:4,5:5};                 /* by colour: blue>space, yellow>mind, red>reality, purple>power, green>time, pink>soul */
-  const segs=[...document.querySelectorAll("#constellation .seg")];
-  const BORN=450, LIFT=300, FLY=1250, SETTLE=250, DUR=BORN+LIFT+FLY+SETTLE, stones=new Array(6);
-  const oC=BORN/DUR, oL=(BORN+LIFT)/DUR, oA=(BORN+LIFT+FLY)/DUR;   /* condensed, lifted, arrived */
+  /* gather and crystallise, left to right */
+  const GLOW="cubic-bezier(.3,0,.2,1)", ORDER=[1,4,3,2,6,5];      /* launch order: outside-in, alternating, crown, Soul */
+  const stones=[], boxes=[];
+  const box=(b,pc)=>{
+    const w=el("eg-pbox",`--c:${pc};left:${b.left}px;top:${b.top}px;width:${b.width}px;height:${b.height}px`);
+    w.innerHTML='<i class="eg-pfill"></i><i class="eg-pline"></i>'; return w;
+  };
+  const gem=(pc,c)=>{
+    const w=el("eg-stone",`width:${S}px;height:${S}px`);
+    w.innerHTML=`<i class="eg-halo a" style="--c:${pc}"></i><i class="eg-halo b" style="--c:${c}"></i>`+
+      `<i class="eg-gem" style="--c:${pc}"></i><i class="eg-tone" style="--c:${c}"></i>`+
+      `<i class="eg-glint" style="--c:${c}"><i></i><i></i><i></i></i>`;
+    return w;
+  };
+  const glint=(st,at)=>st.querySelector(".eg-glint").animate(
+    [{opacity:0,transform:"translate(-50%,-50%) scale(0,.6)"},{opacity:1,transform:"translate(-50%,-50%) scale(1,1)",offset:.35},{opacity:0,transform:"translate(-50%,-50%) scale(.4,.6)"}],
+    {duration:520,delay:at,easing:"ease-out"});
+  for(let p=1;p<=6;p++){
+    const k=p-1, i=PHASE_TO_SEAT[p], pc=(PHASES[p]||PHASES[1]).c, c=STONES[i], b=src[k];
+    const g0=600+k*150, sx=b.left+b.width/2, sy=b.top+b.height/2;
+    const bx=box(b,pc); boxes[p]=bx;
+    const fill=bx.firstChild, line=bx.lastChild;
+    fill.animate([{opacity:0,transform:"scale(1)"},{opacity:1,transform:"scale(1)",offset:.46},{opacity:.9,transform:"scale(.1,.18)",offset:.96},{opacity:0,transform:"scale(.1,.18)"}],
+                 {duration:650,delay:g0,fill:"forwards",easing:"ease-in"});
+    line.animate([{opacity:0},{opacity:.6,offset:.4},{opacity:.22}],{duration:650,delay:g0,fill:"forwards"});
+    /* the mote: just the core of light, which drops out and grows into a gem */
+    const st=gem(pc,c); stones[i]=st;
+    const at=(x,y,k2)=>({translate:`${x-S/2}px ${y-S/2}px`,scale:`${k2}`});
+    st.animate([{...at(sx,sy,.3),opacity:0},{...at(sx,sy,.3),opacity:1,offset:.1},{...at(sx,stageY,1),opacity:1}],
+               {duration:500,delay:g0+600,easing:GLOW,fill:"forwards"});
+    st.querySelector(".eg-halo.a").animate([{opacity:0},{opacity:.55}],{duration:350,delay:g0+600,fill:"forwards"});
+    st.querySelector(".eg-gem").animate([{opacity:0},{opacity:1}],{duration:250,delay:g0+850,fill:"forwards"});
+    glint(st,g0+1000);
+    st.dataset.sx=sx; st.dataset.p=p;
+  }
+  /* hover in the staging row, then fly */
+  const bobs=stones.map((st,i)=>st.animate([{transform:"translateY(0)"},{transform:"translateY(-2px)"},{transform:"translateY(0)"}],
+                                          {duration:900+i*60,delay:1600+i*150,iterations:Infinity,easing:"ease-in-out"}));
+  const LAUNCH0=2500, STAG=330, F=1050, FS=1300, SETTLE=300;
   let lastLand=0;
-  [1,2,3,4,5,6].forEach((ph,k)=>{
-    const i=PHASE_TO_SEAT[ph], c=STONES[i], pc=(PHASES[ph]||PHASES[1]).c;
-    const sb=segs[ph-1] ? segs[ph-1].getBoundingClientRect() : {left:cx-20,top:-60,width:40,height:40};
-    const sx=sb.left+sb.width/2, sy=sb.top+sb.height/2, s0=Math.min(sb.height*.55,S*.75)/S;
-    const [tx,ty]=xy(...seats[i]);
-    const tGlow=500+k*330, tStart=tGlow+550;
-    /* the box fills with its own colour */
-    const box=document.createElement("i"); box.className="eg-pglow";
-    box.style.cssText=`--c:${pc};left:${sb.left}px;top:${sb.top}px;width:${sb.width}px;height:${sb.height}px`;
-    ov.appendChild(box);
-    box.animate([{opacity:0},{opacity:1,offset:.55},{opacity:.85,offset:.75},{opacity:0}],{duration:1900,delay:tGlow,easing:"ease-in-out",fill:"forwards"});
-    /* the flight: an outward arc from the box to the socket, eased, overshoot, settle */
-    const qx=(sx+tx)/2+(sx-cx)*.55, qy=sy+(ty-sy)*.12;
-    const frames=[{translate:`${sx-S/2}px ${sy-S/2}px`,scale:"0",opacity:0,offset:0},
-                  {translate:`${sx-S/2}px ${sy-S/2}px`,scale:`${s0}`,opacity:1,offset:oC},           /* condenses in the box */
-                  {translate:`${sx-S/2}px ${sy-S/2-sb.height*.45}px`,scale:`${s0*1.1}`,opacity:1,offset:oL}];   /* lifts off */
-    for(let n=1;n<=10;n++){
-      const t=n/10, e=t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2, u=1-e;
-      const x=u*u*sx+2*u*e*qx+e*e*tx, y=u*u*(sy-sb.height*.45)+2*u*e*qy+e*e*ty;
-      frames.push({translate:`${x-S/2}px ${y-S/2}px`,scale:`${s0+(1.12-s0)*e}`,opacity:1,offset:oL+t*(oA-oL)});
+  const bez=(a,b,c,d,t)=>{ const u=1-t; return u*u*u*a+3*u*u*t*b+3*u*t*t*c+t*t*t*d; };
+  const dbez=(a,b,c,d,t)=>{ const u=1-t; return 3*u*u*(b-a)+6*u*t*(c-b)+3*t*t*(d-c); };
+  ORDER.forEach((p,n)=>{
+    const i=PHASE_TO_SEAT[p], st=stones[i], c=STONES[i], soul=i===5;
+    const x0=+st.dataset.sx, y0=stageY, [tx,ty]=xy(...seats[i]), d=Math.hypot(tx-x0,ty-y0);
+    let P1,P2;
+    if(soul){ P1=[cx+R+1.6*S, cy-.3*R]; P2=[cx+.9*R, cy+.9*R]; }
+    else { const nx=(tx-cx)/R, ny=(ty-cy)/R; P1=[x0, y0+.35*d]; P2=[tx+nx*.4*d, ty+ny*.4*d]; }
+    const dur=soul?FS:F, L=LAUNCH0+n*STAG+(soul?120:0), total=dur+SETTLE, fo=dur/total;
+    const frames=[], trail=[];
+    for(let s=0;s<=14;s++){
+      const t=s/14, e=t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+      const x=bez(x0,P1[0],P2[0],tx,e), y=bez(y0,P1[1],P2[1],ty,e);
+      const dx=dbez(x0,P1[0],P2[0],tx,e), dy=dbez(y0,P1[1],P2[1],ty,e), len=Math.hypot(dx,dy)||1, ang=Math.atan2(dy,dx)*180/Math.PI;
+      frames.push({translate:`${x-S/2}px ${y-S/2}px`,scale:`${1+.3*Math.sin(Math.PI*e)}`,offset:t*fo});
+      trail.push({translate:`${x-1.5*S-dx/len*1.1*S}px ${y-.225*S-dy/len*1.1*S}px`,rotate:`${ang}deg`,opacity:.7*Math.sin(Math.PI*t),offset:t});
     }
-    frames.push({translate:`${tx-S/2}px ${ty-S/2}px`,scale:"1.18",opacity:1,offset:oA+(1-oA)*.4});   /* overshoot */
-    frames.push({translate:`${tx-S/2}px ${ty-S/2}px`,scale:"1",opacity:1,offset:1});        /* settle */
-    const st=document.createElement("i"); st.className="eg-stone";
-    st.style.cssText=`--c:${pc};width:${S}px;height:${S}px`;
-    st.innerHTML=`<b class="eg-tone" style="--c:${c}"></b>`;
-    ov.appendChild(st);
-    st.animate(frames,{duration:DUR,delay:tStart,easing:"linear",fill:"forwards"});
-    /* colour shift in flight, and the glow follows it */
-    st.firstChild.animate([{opacity:0},{opacity:0,offset:oL+.1},{opacity:1,offset:oA-.05},{opacity:1}],{duration:DUR,delay:tStart,fill:"forwards"});
-    st.animate([{boxShadow:`inset 0 ${-S*.12}px ${S*.2}px rgba(0,0,0,.5),inset 0 ${S*.07}px ${S*.1}px rgba(255,255,255,.3),0 0 ${S*.5}px ${S*.1}px ${pc}`,offset:0},
-                {boxShadow:`inset 0 ${-S*.12}px ${S*.2}px rgba(0,0,0,.5),inset 0 ${S*.07}px ${S*.1}px rgba(255,255,255,.3),0 0 ${S*.5}px ${S*.1}px ${pc}`,offset:oL+.1},
-                {boxShadow:`inset 0 ${-S*.12}px ${S*.2}px rgba(0,0,0,.5),inset 0 ${S*.07}px ${S*.1}px rgba(255,255,255,.3),0 0 ${S*.5}px ${S*.08}px ${c}`,offset:oA-.05},
-                {boxShadow:`inset 0 ${-S*.12}px ${S*.2}px rgba(0,0,0,.5),inset 0 ${S*.07}px ${S*.1}px rgba(255,255,255,.3),0 0 ${S*.5}px ${S*.08}px ${c}`}],
-               {duration:DUR,delay:tStart,fill:"forwards"});
-    /* a faint trail along the arc */
-    [1,2].forEach(g=>{
-      const gh=document.createElement("i"); gh.className="eg-stone ghost"; gh.style.cssText=`--c:${c};width:${S}px;height:${S}px`;
-      ov.appendChild(gh);
-      gh.animate(frames.slice(2,13).map(f=>({...f,offset:(f.offset-oL)/(oA-oL),opacity:.3-g*.1})),{duration:FLY,delay:tStart+BORN+LIFT+g*60,easing:"linear"});
+    frames.push({translate:`${tx-S/2}px ${ty-S/2}px`,scale:"1.14",offset:fo+(1-fo)*.4});
+    frames.push({translate:`${tx-S/2}px ${ty-S/2}px`,scale:"1",offset:1});
+    setTimeout(()=>{ if(!isDone()) bobs[i].cancel(); },L);
+    st.animate(frames,{duration:total,delay:L,easing:"linear",fill:"forwards"});
+    /* colour shift in flight: phase halo out, stone halo and tone in */
+    const X={duration:dur*.55,delay:L+dur*.25,fill:"forwards",easing:"ease-in-out"};
+    st.querySelector(".eg-halo.a").animate([{opacity:.55},{opacity:0}],X);
+    st.querySelector(".eg-halo.b").animate([{opacity:0},{opacity:.55}],X);
+    st.querySelector(".eg-tone").animate([{opacity:0},{opacity:1}],X);
+    /* a light trail and two lagging sparkles */
+    el("eg-streak",`--c:${c};width:${3*S}px;height:${.45*S}px`).animate(trail,{duration:dur,delay:L,easing:"linear",fill:"forwards"});
+    [90,180].forEach(lag=>{
+      el("eg-spark",`--c:${c}`).animate(frames.slice(0,15).map((f,j)=>({translate:f.translate.replace(/(-?[\d.]+)px (-?[\d.]+)px/,(m,a,b2)=>`${+a+S/2-2}px ${+b2+S/2-2}px`),
+        opacity:(j/14)*(1-j/14)*3.2,offset:j/14})),{duration:dur,delay:L+lag,easing:"linear",fill:"forwards"});
     });
-    /* seating flare: a ring of the stone's colour opening out of the socket */
-    const land=tStart+BORN+LIFT+FLY;
-    const fl=document.createElement("i"); fl.className="eg-seat"; fl.style.cssText=`--c:${c};left:${tx}px;top:${ty}px;width:${S*1.4}px;height:${S*1.4}px`;
-    ov.appendChild(fl);
-    fl.animate([{opacity:.9,transform:"translate(-50%,-50%) scale(.6)"},{opacity:0,transform:"translate(-50%,-50%) scale(2.2)"}],
-               {duration:650,delay:land,easing:"ease-out",fill:"forwards"});
-    lastLand=Math.max(lastLand,tStart+DUR);
-    stones[i]=st;
+    /* landing: a glint and colour spilling onto the gold */
+    const land=L+dur;
+    glint(st,land-40);
+    const spill=el("eg-spill",`--c:${c};left:${tx-1.5*S}px;top:${ty-1.5*S}px;width:${3*S}px;height:${3*S}px`);
+    spill.animate([{opacity:0},{opacity:.3}],{duration:400,delay:land,fill:"forwards"});
+    st.spill=spill;
+    lastLand=Math.max(lastLand,L+total);
   });
 
-  /* power up: a pulse wave round the arc, twice, brighter the second time */
-  const PU=lastLand+250;
-  /* gem depth: a dark lower rim and a light upper edge, kept under the glow */
-  const INSET=`inset 0 ${-S*.12}px ${S*.2}px rgba(0,0,0,.5), inset 0 ${S*.07}px ${S*.1}px rgba(255,255,255,.3)`;
-  stones.forEach((st,i)=>{
-    const c=STONES[i];
-    st.animate([{scale:"1",filter:"brightness(1)"},{scale:"1.22",filter:"brightness(1.35)"},{scale:"1",filter:"brightness(1.1)"},
-                {scale:"1.3",filter:"brightness(1.6)"},{scale:"1.08",filter:"brightness(1.25)"}],
-               {duration:1500,delay:PU+i*70,easing:"ease-in-out",fill:"forwards"});
-    st.animate([{boxShadow:`${INSET}, 0 0 ${S*.5}px ${S*.08}px ${c}`},{boxShadow:`${INSET}, 0 0 ${S*1.8}px ${S*.5}px ${c}`}],
-               {duration:1500,delay:PU+i*70,easing:"ease-in",fill:"forwards"});
+  /* power-up: a halo wave round the arc, energy along the band, beams to the plate */
+  const PU=lastLand+150, REL=PU+1150;
+  bloom.animate([{opacity:0,transform:"translate(-50%,-50%) scale(.6)"},{opacity:.9,transform:"translate(-50%,-50%) scale(1.15)"}],
+                {duration:1100,delay:PU,easing:"ease-in",fill:"forwards"});
+  rays.animate([{opacity:0},{opacity:.95}],{duration:1000,delay:PU,fill:"forwards",easing:"ease-in"});
+  [0,1,2,3,4,5].forEach(i=>{
+    const st=stones[i], w=i*70;
+    st.querySelector(".eg-halo.b").animate([{opacity:.55,transform:"translate(-50%,-50%) scale(1)"},{opacity:1,transform:"translate(-50%,-50%) scale(1.6)"}],
+                                           {duration:900,delay:PU+w,easing:"ease-in",fill:"forwards"});
+    st.spill.animate([{opacity:.3},{opacity:.7}],{duration:700,delay:PU+w,fill:"forwards"});
+    glint(st,PU+700+w);
   });
-  ov.animate([{translate:"0 0"},{translate:"1.5px -1px"},{translate:"-1.5px 1px"},{translate:"1px 1.5px"},{translate:"0 0"}],
-             {duration:260,delay:PU+1250,iterations:2});
+  energy.animate([{opacity:0,strokeDashoffset:1},{opacity:1,strokeDashoffset:.5,offset:.3},{opacity:1,strokeDashoffset:0}],{duration:700,delay:PU,iterations:2});
+  if(!tight) seats.slice(0,5).forEach(([a],i)=>{
+    const [x,y]=xy(a,R), len=Math.hypot(cx-x,plateY-y), ang=Math.atan2(plateY-y,cx-x)*180/Math.PI;
+    el("eg-beam",`--c:${STONES[i]};left:${x}px;top:${y-1}px;width:${len}px;transform:rotate(${ang}deg) scaleX(0)`)
+      .animate([{transform:`rotate(${ang}deg) scaleX(0)`,opacity:1},{transform:`rotate(${ang}deg) scaleX(1)`,opacity:1,offset:.6},{transform:`rotate(${ang}deg) scaleX(1)`,opacity:0}],
+               {duration:300+760,delay:REL-150-300-(4-i)*60,easing:"ease-out",fill:"forwards"});
+  });
+  ov.animate([{translate:"0 0"},{translate:"1.5px -1px"},{translate:"-1.5px 1px"},{translate:"1px 1.5px"},{translate:"0 0"}],{duration:260,delay:PU+850});
 
-  /* release: one soft flash, a double shockwave; the dark lifts; the phase bar answers */
-  const REL=PU+1750;
-  flash.animate([{opacity:0},{opacity:.3},{opacity:0}],{duration:520,delay:REL,easing:"ease-out"});
+  /* release from the plate; the dark lifts; the light goes home */
+  flash.animate([{opacity:0},{opacity:.3},{opacity:0}],{duration:500,delay:REL,easing:"ease-out"});
   rings.forEach((r,i)=>r.animate([{opacity:.95,transform:"translate(-50%,-50%) scale(.15)"},{opacity:0,transform:"translate(-50%,-50%) scale(10)"}],
     {duration:1500+i*300,delay:REL+i*140,easing:"cubic-bezier(.12,.7,.3,1)",fill:"forwards"}));
   dim.animate([{opacity:.9},{opacity:0}],{duration:1200,delay:REL+150,fill:"forwards",easing:"ease-in-out"});
-  bloom.animate([{opacity:.85},{opacity:0}],{duration:900,delay:REL,fill:"forwards"});
-  [...document.querySelectorAll("#constellation .seg")].forEach((seg,i)=>{
-    const c=(PHASES[i+1]||PHASES[1]).c;
-    seg.animate([{boxShadow:`0 0 0 0 ${c}00`},{boxShadow:`0 0 24px 4px ${c}`,offset:.3},{boxShadow:`0 0 0 0 ${c}00`}],
-                {duration:1200,delay:REL+300+i*170,easing:"ease-out"});
-  });
-  /* the gauntlet and stones lift away last */
-  const out=[$o(".eg-arc"),...stones].map(e=>e.animate([{opacity:1,transform:"translateY(0)"},{opacity:0,transform:"translateY(-14px)"}],
+  bloom.animate([{opacity:.9},{opacity:0}],{duration:900,delay:REL,fill:"forwards"});
+  rays.animate([{opacity:.95},{opacity:0}],{duration:800,delay:REL+100,fill:"forwards"});
+  for(let p=1;p<=6;p++){
+    const bx=boxes[p], t=REL+300+(p-1)*150;
+    bx.firstChild.animate([{opacity:0,transform:"scale(.1,.18)"},{opacity:.9,transform:"scale(1)",offset:.5},{opacity:0,transform:"scale(1)"}],{duration:900,delay:t,fill:"forwards",easing:"ease-out"});
+    bx.lastChild.animate([{opacity:.22},{opacity:0}],{duration:600,delay:t+300,fill:"forwards"});
+    if(fromBar){ const seg=document.querySelector(`#constellation .seg[data-p="${p}"]`), c=PHASES[p].c;
+      if(seg) segAnims.push(seg.animate([{boxShadow:`0 0 0 0 ${c}00`},{boxShadow:`0 0 24px 4px ${c}`,offset:.35},{boxShadow:`0 0 0 0 ${c}00`}],{duration:1200,delay:t+300,easing:"ease-out"})); }
+  }
+  const out=[$o(".eg-arc"),...stones,...ov.querySelectorAll(".eg-spill")].map(e=>e.animate([{opacity:1,transform:"translateY(0)"},{opacity:0,transform:"translateY(-14px)"}],
     {duration:1000,delay:REL+650,easing:"ease-in",fill:"forwards"}));
   Promise.all(out.map(a=>a.finished)).then(()=>{ if(!isDone()) finish(); },()=>{});
 }

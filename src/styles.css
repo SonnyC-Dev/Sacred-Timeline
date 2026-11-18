@@ -713,6 +713,16 @@ body.hulk:before{content:"";position:fixed;inset:0;z-index:54;pointer-events:non
   footer .note{text-align:left;margin-left:0}
 }
 
+/* the slim phase strip along the bottom edge of the sticky bar: six segments
+   filling in phase colours. Absolutely placed, so it adds no height; it fades
+   in only once the bar is stuck (at the top the full phase bar is in view). */
+.phasestrip{position:absolute;left:18px;right:18px;bottom:-1px;height:3px;display:flex;gap:4px;
+  opacity:0;transition:opacity .35s var(--ease);pointer-events:none}
+.controls.stuck .phasestrip{opacity:1}
+.phasestrip i{flex:1;position:relative;overflow:hidden;border-radius:2px;background:rgba(255,255,255,.08)}
+.phasestrip b{position:absolute;left:0;top:0;bottom:0;width:var(--pct,0%);border-radius:2px;
+  background:var(--pc);box-shadow:0 0 6px var(--pc);transition:width .6s var(--ease)}
+
 /* ============================ PHONE PASS ============================
    Phone and touch refinements. Everything here is scoped so desktop and laptop
    render exactly as before: layout changes sit under max-width:620px, finger-
@@ -782,35 +792,55 @@ body.hulk:before{content:"";position:fixed;inset:0;z-index:54;pointer-events:non
 .snapnote.out{animation:snapOut .3s ease-in both}
 @keyframes snapIn{from{opacity:0;transform:translateY(10px)}}
 @keyframes snapOut{to{opacity:0;transform:translateY(10px)}}
-/* the gauntlet: graded warm in the centre, cool at the edges */
+/* the gauntlet: graded warm round the gauntlet, cool at the edges; everything
+   centres on --cx/--cy (the gauntlet) or --py (its centre plate), set in JS */
 .eg-dim{inset:0;opacity:0;
-  background:radial-gradient(ellipse at 50% 44%,#2a1a07 0%,#140d07 32%,#06080d 72%,#020306 100%)}
-.eg-bloom{width:90vmin;height:90vmin;opacity:0;border-radius:50%;transform:translate(-50%,-50%);
+  background:radial-gradient(ellipse at var(--cx,50%) var(--cy,44%),#2a1a07 0%,#140d07 30%,#06080d 70%,#020306 100%)}
+.eg-bloom{left:var(--cx);top:var(--cy);width:90vmin;height:90vmin;opacity:0;border-radius:50%;transform:translate(-50%,-50%);
   background:radial-gradient(circle,rgba(255,206,110,.42) 0%,rgba(255,170,60,.16) 35%,transparent 68%)}
-.eg-rays{width:220vmax;height:220vmax;opacity:0;transform:translate(-50%,-50%);border-radius:50%;
+.eg-rays{left:var(--cx);top:var(--cy);width:220vmax;height:220vmax;opacity:0;transform:translate(-50%,-50%);border-radius:50%;
   background:repeating-conic-gradient(from 0deg,rgba(255,214,130,.2) 0deg 3deg,transparent 3deg 15deg);
   -webkit-mask-image:radial-gradient(circle,#000 0%,transparent 42%);mask-image:radial-gradient(circle,#000 0%,transparent 42%)}
-.eg-arc{position:absolute;inset:0;filter:drop-shadow(0 0 12px rgba(240,180,70,.4))}
+.eg-arc{position:absolute;inset:0}
 .eg-metal circle{transform-box:fill-box;transform-origin:center}
-/* a gem: specular glint, faint facets, colour deepening to a dark rim */
-.eg-stone{left:0;top:0;opacity:0;border-radius:50%}
-.eg-stone,.eg-tone{
+/* a phase box giving up its light: the fill pinches to a point, the outline stays as a spent socket */
+.eg-pbox{position:absolute}
+.eg-pbox i{position:absolute;inset:0;border-radius:10px;opacity:0}
+.eg-pfill{background:radial-gradient(ellipse at center,#fff 0%,var(--c) 35%,color-mix(in srgb,var(--c) 45%,transparent) 75%);
+  box-shadow:0 0 22px 4px var(--c)}
+.eg-pline{border:1px solid var(--c)}
+/* a stone: a transform-only wrapper holding layered light round the gem */
+.eg-stone{left:0;top:0}
+.eg-stone>i{position:absolute;display:block}
+.eg-halo{left:50%;top:50%;width:500%;height:500%;opacity:0;border-radius:50%;transform:translate(-50%,-50%);
+  background:radial-gradient(circle,color-mix(in srgb,var(--c) 60%,transparent) 0%,color-mix(in srgb,var(--c) 22%,transparent) 28%,transparent 68%)}
+.eg-halo::after{content:"";position:absolute;left:50%;top:50%;width:44%;height:44%;border-radius:50%;transform:translate(-50%,-50%);
+  background:radial-gradient(circle,rgba(255,255,255,.9) 0%,color-mix(in srgb,var(--c) 70%,#fff) 18%,color-mix(in srgb,var(--c) 50%,transparent) 42%,transparent 70%)}
+.eg-gem,.eg-tone{inset:0;opacity:0;border-radius:50%;
+  box-shadow:inset 0 -2px 4px rgba(0,0,0,.5),inset 0 1px 2px rgba(255,255,255,.3);
   background:
     radial-gradient(ellipse 30% 22% at 34% 27%,rgba(255,255,255,.95),rgba(255,255,255,0) 100%),
     conic-gradient(from 25deg,rgba(255,255,255,.16),rgba(0,0,0,.16),rgba(255,255,255,.1),rgba(0,0,0,.2),rgba(255,255,255,.14),rgba(0,0,0,.14),rgba(255,255,255,.16)),
     radial-gradient(circle at 50% 58%,color-mix(in srgb,var(--c) 85%,#fff) 0%,var(--c) 42%,color-mix(in srgb,var(--c) 45%,#000) 100%)}
-.eg-stone.ghost{filter:blur(3px);box-shadow:0 0 14px var(--c)}
-/* the true stone colour (its own --c), faded in over the phase colour in flight */
-.eg-tone{position:absolute;inset:0;border-radius:50%;opacity:0}
-/* a phase box filling with its own colour as its stone forms */
-.eg-pglow{opacity:0;border-radius:10px;border:1px solid var(--c);
-  background:color-mix(in srgb,var(--c) 26%,transparent);
-  box-shadow:0 0 18px 2px var(--c),inset 0 0 14px color-mix(in srgb,var(--c) 55%,transparent)}
-.eg-seat{opacity:0;border-radius:50%;transform:translate(-50%,-50%);border:2px solid var(--c);box-shadow:0 0 16px var(--c)}
-.eg-ring{width:120px;height:120px;opacity:0;border-radius:50%;transform:translate(-50%,-50%);
+/* a glint: two crossed bars of white and a wide flare in the stone's colour */
+.eg-glint{left:50%;top:50%;width:100%;height:100%;opacity:0;transform:translate(-50%,-50%)}
+.eg-glint i{position:absolute;left:50%;top:50%;display:block;border-radius:2px;transform:translate(-50%,-50%)}
+.eg-glint i:nth-child(1){width:320%;height:2px;background:linear-gradient(90deg,transparent,#fff,transparent)}
+.eg-glint i:nth-child(2){width:2px;height:320%;background:linear-gradient(180deg,transparent,#fff,transparent)}
+.eg-glint i:nth-child(3){width:600%;height:3px;opacity:.5;background:linear-gradient(90deg,transparent,var(--c),transparent)}
+.eg-streak{left:0;top:0;opacity:0;border-radius:50%;transform-origin:center;
+  background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--c) 70%,#fff))}
+.eg-spark{left:0;top:0;width:4px;height:4px;opacity:0;border-radius:50%;background:#fff;box-shadow:0 0 6px 1px var(--c)}
+.eg-spill{opacity:0;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--c) 70%,transparent) 0%,transparent 65%)}
+.eg-beam{height:2px;opacity:0;transform-origin:0 50%;border-radius:2px;background:linear-gradient(90deg,var(--c),#fff)}
+/* light adds up where the browser can; a softer blend elsewhere */
+.eg-halo,.eg-glint,.eg-streak,.eg-beam,.eg-spill{mix-blend-mode:screen}
+@supports (mix-blend-mode:plus-lighter){ .eg-halo,.eg-glint,.eg-streak,.eg-beam,.eg-spill{mix-blend-mode:plus-lighter} }
+.eg-ring{left:var(--cx);top:var(--py);width:120px;height:120px;opacity:0;border-radius:50%;transform:translate(-50%,-50%);
   border:3px solid rgba(255,232,170,.9);box-shadow:0 0 30px rgba(255,200,90,.7),inset 0 0 24px rgba(255,200,90,.5)}
 .eg-ring.thin{border-width:1px;box-shadow:0 0 14px rgba(255,220,140,.5)}
-.eg-flash{inset:0;opacity:0;background:radial-gradient(circle at 50% 46%,#fff6e0 0%,#ffe2a8 45%,rgba(255,226,168,.4) 100%);pointer-events:none}
+.eg-flash{inset:0;opacity:0;pointer-events:none;
+  background:radial-gradient(circle at var(--cx,50%) var(--py,50%),#fff6e0 0%,#ffe2a8 45%,rgba(255,226,168,.4) 100%)}
 /* scarlet witch: a crimson vignette, chaos-magic threads, a rune-ringed orb */
 .sw-veil{inset:0;opacity:0;
   background:radial-gradient(ellipse 75% 70% at 50% 45%,transparent 30%,rgba(120,8,24,.55) 70%,rgba(40,0,8,.92) 100%)}
