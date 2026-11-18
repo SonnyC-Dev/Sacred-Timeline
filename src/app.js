@@ -1099,6 +1099,7 @@ function visible(){
   return DATA.filter(m=>{
     if(!state.series && m.t!=="film") return false;
     if(state.hidden[m.id]) return false;
+    if(snapped.has(m.id)) return false;          /* gone in the snap, until blip (view only) */
     /* hidden only when nothing else is asking to see them */
     if(state.hideFuture && m.r>today() && state.show!=="unseen" && !state.q.trim()) return false;
     if(state.phase && m.p!==state.phase) return false;
@@ -2364,6 +2365,54 @@ function dustScale(from,to,dur,done){
   })(t0);
 }
 let ashing=false;
+/* ---------- snap and blip ----------
+   "snap" dusts away exactly half of the titles in the list, and they stay gone
+   until "blip" (or the banner's button) brings them back. It is a view only:
+   watch history, ratings and stats are untouched, nothing is saved or synced,
+   and a reload brings everyone back. */
+let snapped=new Set();
+function snapNote(on){
+  let n=document.getElementById("snapnote");
+  if(!on){ if(n){ n.classList.add("out"); setTimeout(()=>n.remove(),300); } return; }
+  if(n) return;
+  n=document.createElement("div"); n.id="snapnote"; n.className="snapnote"; n.setAttribute("role","status");
+  n.innerHTML='<span>Half the universe is gone.</span><button type="button">Bring them back</button>';
+  n.querySelector("button").addEventListener("click",blip);
+  document.body.appendChild(n);
+}
+function snapHalf(){
+  if(ashing) return;
+  if(snapped.size){ toast("Half the universe is already gone. Type blip to bring them back."); return; }
+  const ids=visible().map(m=>m.id);
+  for(let i=ids.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [ids[i],ids[j]]=[ids[j],ids[i]]; }
+  const gone=ids.slice(0,Math.floor(ids.length/2));
+  if(!gone.length){ toast("Nothing here to snap."); return; }
+  const settle=()=>{ snapped=new Set(gone); render(true); snapNote(true); };
+  if(reduced()){ settle(); return; }
+  ashing=true; flash();
+  const rows=gone.map(id=>listEl.querySelector(`li.entry[data-id="${id}"]`)).filter(Boolean);
+  rows.forEach((el,i)=>{ el.classList.add("ashing"); setTimeout(()=>el.classList.add("gone"),60+i*38); });
+  dustScale(0,95,2600);
+  setTimeout(()=>{ rows.forEach(el=>el.classList.remove("ashing","gone")); $("#dustMap").setAttribute("scale","0"); settle(); ashing=false; },
+             60+rows.length*38+2400);
+}
+function blip(){
+  if(ashing) return;
+  if(!snapped.size){ snap(false); return; }      /* nobody missing: the old there-and-back */
+  const back=[...snapped]; snapped=new Set(); snapNote(false); render(true);
+  if(reduced()) return;
+  ashing=true; flash();
+  /* the returning rows start as dust and re-form */
+  const rows=back.map(id=>listEl.querySelector(`li.entry[data-id="${id}"]`)).filter(Boolean);
+  rows.forEach(el=>el.classList.add("ashing","gone"));
+  $("#dustMap").setAttribute("scale","95");
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    rows.forEach((el,i)=>setTimeout(()=>el.classList.remove("gone"),i*38));
+    dustScale(95,0,1700+rows.length*38);
+    setTimeout(()=>{ rows.forEach(el=>el.classList.remove("ashing")); ashing=false; },2400+rows.length*38);
+  }));
+}
+/* the original quick version: things dust away and come straight back */
 function snap(half){
   if(ashing) return; ashing=true;
   const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -2476,16 +2525,25 @@ function eggOverlay(cls,cleanup){
   return {ov,finish,isDone:()=>done};
 }
 
-/* The Gauntlet, about 8s. The scene darkens (warm centre, cool edges) and a
-   bevelled gold arc draws itself while breathing in. The six stones then
-   spiral in clockwise as one vortex, each sweeping ~100 degrees round the
-   centre while closing on its own socket, overshooting slightly and settling
-   with a flare; the Soul stone comes last, up into the centre plate. They
+/* The Gauntlet, about 8.5s. The scene darkens (warm centre, cool edges) and a
+   bevelled gold arc draws itself while breathing in. The six stones are born
+   in the phase bar: each box fills with its colour, a gem condenses in it,
+   lifts off and arcs down to its socket, turning from its phase colour to its
+   true stone colour on the way, then overshoots slightly and settles with a
+   flare. They
    pulse in a wave round the arc as light rays turn and a gold bloom builds;
    one soft flash and a double shockwave release it, and the phase bar lights
    up box by box as the darkness lifts. */
 function gauntlet(){
   if(reduced()){ toast("The stones are ready. Turn effects on in Settings to see them."); return; }
+  /* the stones come out of the phase bar, so it must be on screen: if it is
+     scrolled away, glide back up first */
+  const bar=document.getElementById("constellation"), bb=bar&&bar.getBoundingClientRect();
+  if(bb && (bb.top<0 || bb.bottom>innerHeight) && !gauntlet.scrolling){
+    gauntlet.scrolling=true; scrollTo({top:0,behavior:"smooth"});
+    setTimeout(()=>{ gauntlet.scrolling=false; gauntlet(); },750);
+    return;
+  }
   const E=eggOverlay("egg-gauntlet"); if(!E) return;
   const {ov,finish,isDone}=E;
   const W=innerWidth, H=innerHeight, cx=W/2, cy=H*.46, R=Math.min(W*.3,H*.26,190), S=R*.21;
@@ -2534,38 +2592,68 @@ function gauntlet(){
   /* stones move with the `translate` property and grow with `scale`: browsers
      apply translate after scale, so growing (here and in the pulse) happens
      on the spot instead of pushing the stone away from the corner */
-  /* the vortex: sample a clockwise spiral into each seat, eased, with an overshoot and settle */
-  const FLY=1150, GAP=360, T0=1500;
-  const stones=STONES.map((c,i)=>{
-    const [sa,sr]=seats[i], a0=sa-100, r0=Math.hypot(W,H)*.62;
-    const frames=[];
-    for(let k=0;k<=8;k++){
-      const t=k/8, e=1-Math.pow(1-t,3);                       /* fast in, gentle arrival */
-      const [x,y]=xy(a0+(sa-a0)*e, r0+(sr-r0)*e);
-      frames.push({translate:`${x-S/2}px ${y-S/2}px`, scale:`${.45+.7*e}`, opacity:Math.min(1,t*3), offset:t*.82});
+  /* the stones are born in the phase bar: in phase order, each box slowly
+     fills with its colour, a gem condenses in it and lifts off, then flies to
+     its socket on an outward arc, shifting from its phase colour to its true
+     stone colour on the way (phase 5's pink becomes the orange Soul stone) */
+  const PHASE_TO_SEAT={1:0,3:1,6:2,2:3,4:4,5:5};                 /* by colour: blue>space, yellow>mind, red>reality, purple>power, green>time, pink>soul */
+  const segs=[...document.querySelectorAll("#constellation .seg")];
+  const BORN=450, LIFT=300, FLY=1250, SETTLE=250, DUR=BORN+LIFT+FLY+SETTLE, stones=new Array(6);
+  const oC=BORN/DUR, oL=(BORN+LIFT)/DUR, oA=(BORN+LIFT+FLY)/DUR;   /* condensed, lifted, arrived */
+  let lastLand=0;
+  [1,2,3,4,5,6].forEach((ph,k)=>{
+    const i=PHASE_TO_SEAT[ph], c=STONES[i], pc=(PHASES[ph]||PHASES[1]).c;
+    const sb=segs[ph-1] ? segs[ph-1].getBoundingClientRect() : {left:cx-20,top:-60,width:40,height:40};
+    const sx=sb.left+sb.width/2, sy=sb.top+sb.height/2, s0=Math.min(sb.height*.55,S*.75)/S;
+    const [tx,ty]=xy(...seats[i]);
+    const tGlow=500+k*330, tStart=tGlow+550;
+    /* the box fills with its own colour */
+    const box=document.createElement("i"); box.className="eg-pglow";
+    box.style.cssText=`--c:${pc};left:${sb.left}px;top:${sb.top}px;width:${sb.width}px;height:${sb.height}px`;
+    ov.appendChild(box);
+    box.animate([{opacity:0},{opacity:1,offset:.55},{opacity:.85,offset:.75},{opacity:0}],{duration:1900,delay:tGlow,easing:"ease-in-out",fill:"forwards"});
+    /* the flight: an outward arc from the box to the socket, eased, overshoot, settle */
+    const qx=(sx+tx)/2+(sx-cx)*.55, qy=sy+(ty-sy)*.12;
+    const frames=[{translate:`${sx-S/2}px ${sy-S/2}px`,scale:"0",opacity:0,offset:0},
+                  {translate:`${sx-S/2}px ${sy-S/2}px`,scale:`${s0}`,opacity:1,offset:oC},           /* condenses in the box */
+                  {translate:`${sx-S/2}px ${sy-S/2-sb.height*.45}px`,scale:`${s0*1.1}`,opacity:1,offset:oL}];   /* lifts off */
+    for(let n=1;n<=10;n++){
+      const t=n/10, e=t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2, u=1-e;
+      const x=u*u*sx+2*u*e*qx+e*e*tx, y=u*u*(sy-sb.height*.45)+2*u*e*qy+e*e*ty;
+      frames.push({translate:`${x-S/2}px ${y-S/2}px`,scale:`${s0+(1.12-s0)*e}`,opacity:1,offset:oL+t*(oA-oL)});
     }
-    const [tx,ty]=xy(sa,sr);
-    frames.push({translate:`${tx-S/2}px ${ty-S/2}px`,scale:"1.18",opacity:1,offset:.9});   /* overshoot */
-    frames.push({translate:`${tx-S/2}px ${ty-S/2}px`,scale:"1",opacity:1});                  /* settle */
-    const t0=T0+i*GAP+(i===5?160:0);
-    [1,2,3].forEach(n=>{
-      const g=document.createElement("i"); g.className="eg-stone ghost"; g.style.cssText=`--c:${c};width:${S}px;height:${S}px`;
-      ov.appendChild(g);
-      g.animate(frames.slice(0,9).map(f=>({...f,opacity:f.opacity*(.42-n*.11)})),{duration:FLY*.82,delay:t0+n*55,easing:"linear"});
-    });
-    const st=document.createElement("i"); st.className="eg-stone"; st.style.cssText=`--c:${c};width:${S}px;height:${S}px;box-shadow:inset 0 ${-S*.12}px ${S*.2}px rgba(0,0,0,.5),inset 0 ${S*.07}px ${S*.1}px rgba(255,255,255,.3),0 0 ${S*.5}px ${S*.08}px ${c}`;
+    frames.push({translate:`${tx-S/2}px ${ty-S/2}px`,scale:"1.18",opacity:1,offset:oA+(1-oA)*.4});   /* overshoot */
+    frames.push({translate:`${tx-S/2}px ${ty-S/2}px`,scale:"1",opacity:1,offset:1});        /* settle */
+    const st=document.createElement("i"); st.className="eg-stone";
+    st.style.cssText=`--c:${pc};width:${S}px;height:${S}px`;
+    st.innerHTML=`<b class="eg-tone" style="--c:${c}"></b>`;
     ov.appendChild(st);
-    st.animate(frames,{duration:FLY,delay:t0,easing:"linear",fill:"forwards"});
+    st.animate(frames,{duration:DUR,delay:tStart,easing:"linear",fill:"forwards"});
+    /* colour shift in flight, and the glow follows it */
+    st.firstChild.animate([{opacity:0},{opacity:0,offset:oL+.1},{opacity:1,offset:oA-.05},{opacity:1}],{duration:DUR,delay:tStart,fill:"forwards"});
+    st.animate([{boxShadow:`inset 0 ${-S*.12}px ${S*.2}px rgba(0,0,0,.5),inset 0 ${S*.07}px ${S*.1}px rgba(255,255,255,.3),0 0 ${S*.5}px ${S*.1}px ${pc}`,offset:0},
+                {boxShadow:`inset 0 ${-S*.12}px ${S*.2}px rgba(0,0,0,.5),inset 0 ${S*.07}px ${S*.1}px rgba(255,255,255,.3),0 0 ${S*.5}px ${S*.1}px ${pc}`,offset:oL+.1},
+                {boxShadow:`inset 0 ${-S*.12}px ${S*.2}px rgba(0,0,0,.5),inset 0 ${S*.07}px ${S*.1}px rgba(255,255,255,.3),0 0 ${S*.5}px ${S*.08}px ${c}`,offset:oA-.05},
+                {boxShadow:`inset 0 ${-S*.12}px ${S*.2}px rgba(0,0,0,.5),inset 0 ${S*.07}px ${S*.1}px rgba(255,255,255,.3),0 0 ${S*.5}px ${S*.08}px ${c}`}],
+               {duration:DUR,delay:tStart,fill:"forwards"});
+    /* a faint trail along the arc */
+    [1,2].forEach(g=>{
+      const gh=document.createElement("i"); gh.className="eg-stone ghost"; gh.style.cssText=`--c:${c};width:${S}px;height:${S}px`;
+      ov.appendChild(gh);
+      gh.animate(frames.slice(2,13).map(f=>({...f,offset:(f.offset-oL)/(oA-oL),opacity:.3-g*.1})),{duration:FLY,delay:tStart+BORN+LIFT+g*60,easing:"linear"});
+    });
     /* seating flare: a ring of the stone's colour opening out of the socket */
+    const land=tStart+BORN+LIFT+FLY;
     const fl=document.createElement("i"); fl.className="eg-seat"; fl.style.cssText=`--c:${c};left:${tx}px;top:${ty}px;width:${S*1.4}px;height:${S*1.4}px`;
     ov.appendChild(fl);
     fl.animate([{opacity:.9,transform:"translate(-50%,-50%) scale(.6)"},{opacity:0,transform:"translate(-50%,-50%) scale(2.2)"}],
-               {duration:650,delay:t0+FLY*.86,easing:"ease-out",fill:"forwards"});
-    return st;
+               {duration:650,delay:land,easing:"ease-out",fill:"forwards"});
+    lastLand=Math.max(lastLand,tStart+DUR);
+    stones[i]=st;
   });
 
   /* power up: a pulse wave round the arc, twice, brighter the second time */
-  const PU=T0+5*GAP+160+FLY+250;
+  const PU=lastLand+250;
   /* gem depth: a dark lower rim and a light upper edge, kept under the glow */
   const INSET=`inset 0 ${-S*.12}px ${S*.2}px rgba(0,0,0,.5), inset 0 ${S*.07}px ${S*.1}px rgba(255,255,255,.3)`;
   stones.forEach((st,i)=>{
@@ -2907,9 +2995,9 @@ const EGGS={
   "time heist":    {say:"",  run:eggTimeHeist},
   "we have a hulk":{say:"That’s my secret. I’m always angry.", run:eggHulk},
   "canon":         {say:"",  run:eggCanon},
-  "snap":          {say:"Perfectly balanced, as all things should be.", run:()=>snap(true)},
-  "thanos":        {say:"Perfectly balanced, as all things should be.", run:()=>snap(true)},
-  "blip":          {say:"Five years later. Everybody back.",            run:()=>snap(false)},
+  "snap":          {say:"Perfectly balanced, as all things should be.", run:snapHalf},
+  "thanos":        {say:"Perfectly balanced, as all things should be.", run:snapHalf},
+  "blip":          {say:"Five years later. Everybody back.",            run:blip},
   "bifrost":       {say:"Heimdall, open the Bifröst.",                  run:()=>{window.__bifrost();setTimeout(window.__bifrost,420)}},
   "heimdall":      {say:"Heimdall, open the Bifröst.",                  run:()=>window.__bifrost()},
   "tva":           {say:"For all time. Always.",                        run:()=>{

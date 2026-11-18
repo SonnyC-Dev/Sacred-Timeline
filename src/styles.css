@@ -771,6 +771,17 @@ body.hulk:before{content:"";position:fixed;inset:0;z-index:54;pointer-events:non
    and opacity only; no backdrop-filter or clip-path (they break phones). */
 .egg{position:fixed;inset:0;z-index:65;pointer-events:auto;overflow:hidden;cursor:pointer}
 .egg i{position:absolute;display:block}
+/* after a snap: a small, quiet pill in the corner until everyone is back */
+.snapnote{position:fixed;left:14px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:30;
+  display:flex;align-items:center;gap:10px;padding:5px 5px 5px 13px;border-radius:999px;
+  background:rgba(10,12,18,.84);border:1px solid rgba(255,196,140,.16);box-shadow:0 8px 24px -12px #000;
+  color:var(--ink-dim);font-size:12px;animation:snapIn .5s cubic-bezier(.2,.8,.3,1) both}
+.snapnote button{border:0;border-radius:999px;padding:5px 11px;font:inherit;font-weight:600;cursor:pointer;
+  background:rgba(255,186,120,.13);color:#ffd2a1}
+.snapnote button:hover{background:rgba(255,186,120,.22)}
+.snapnote.out{animation:snapOut .3s ease-in both}
+@keyframes snapIn{from{opacity:0;transform:translateY(10px)}}
+@keyframes snapOut{to{opacity:0;transform:translateY(10px)}}
 /* the gauntlet: graded warm in the centre, cool at the edges */
 .eg-dim{inset:0;opacity:0;
   background:radial-gradient(ellipse at 50% 44%,#2a1a07 0%,#140d07 32%,#06080d 72%,#020306 100%)}
@@ -782,12 +793,19 @@ body.hulk:before{content:"";position:fixed;inset:0;z-index:54;pointer-events:non
 .eg-arc{position:absolute;inset:0;filter:drop-shadow(0 0 12px rgba(240,180,70,.4))}
 .eg-metal circle{transform-box:fill-box;transform-origin:center}
 /* a gem: specular glint, faint facets, colour deepening to a dark rim */
-.eg-stone{left:0;top:0;opacity:0;border-radius:50%;
+.eg-stone{left:0;top:0;opacity:0;border-radius:50%}
+.eg-stone,.eg-tone{
   background:
     radial-gradient(ellipse 30% 22% at 34% 27%,rgba(255,255,255,.95),rgba(255,255,255,0) 100%),
     conic-gradient(from 25deg,rgba(255,255,255,.16),rgba(0,0,0,.16),rgba(255,255,255,.1),rgba(0,0,0,.2),rgba(255,255,255,.14),rgba(0,0,0,.14),rgba(255,255,255,.16)),
     radial-gradient(circle at 50% 58%,color-mix(in srgb,var(--c) 85%,#fff) 0%,var(--c) 42%,color-mix(in srgb,var(--c) 45%,#000) 100%)}
 .eg-stone.ghost{filter:blur(3px);box-shadow:0 0 14px var(--c)}
+/* the true stone colour (its own --c), faded in over the phase colour in flight */
+.eg-tone{position:absolute;inset:0;border-radius:50%;opacity:0}
+/* a phase box filling with its own colour as its stone forms */
+.eg-pglow{opacity:0;border-radius:10px;border:1px solid var(--c);
+  background:color-mix(in srgb,var(--c) 26%,transparent);
+  box-shadow:0 0 18px 2px var(--c),inset 0 0 14px color-mix(in srgb,var(--c) 55%,transparent)}
 .eg-seat{opacity:0;border-radius:50%;transform:translate(-50%,-50%);border:2px solid var(--c);box-shadow:0 0 16px var(--c)}
 .eg-ring{width:120px;height:120px;opacity:0;border-radius:50%;transform:translate(-50%,-50%);
   border:3px solid rgba(255,232,170,.9);box-shadow:0 0 30px rgba(255,200,90,.7),inset 0 0 24px rgba(255,200,90,.5)}
