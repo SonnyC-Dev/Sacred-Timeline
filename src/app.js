@@ -2371,16 +2371,18 @@ function snap(half){
   const hit=half ? all.filter(()=>Math.random()<.5) : all;
   if(reduce||!hit.length){ ashing=false; return; }
   flash();
+  /* about 50% longer than it was: slower dusting, a wider ripple, a longer
+     hold while they are gone, a gentler return (.ashing transition is 2.3s) */
   hit.forEach((el,i)=>{
     el.classList.add("ashing");
-    setTimeout(()=>el.classList.add("gone"), 40+i*26);
+    setTimeout(()=>el.classList.add("gone"), 60+i*38);
   });
-  dustScale(0,95,1700);
+  dustScale(0,95,2600);
   setTimeout(()=>{
-    dustScale(95,0,1100);
+    dustScale(95,0,1700);
     hit.forEach(el=>el.classList.remove("gone"));
-    setTimeout(()=>{ hit.forEach(el=>el.classList.remove("ashing")); ashing=false; },1250);
-  }, 2700);
+    setTimeout(()=>{ hit.forEach(el=>el.classList.remove("ashing")); ashing=false; },2400);
+  }, 4300);
 }
 function assemble(){
   state.phase=0; state.show="all"; $("#show").value="all";
@@ -2474,74 +2476,128 @@ function eggOverlay(cls,cleanup){
   return {ov,finish,isDone:()=>done};
 }
 
-/* The Gauntlet, about 8s: the screen darkens and a golden gauntlet arc draws
-   itself; the six stones streak in one by one from the edges and seat
-   themselves; they pulse together as light rays spill out; one shockwave
-   (a single, gentle flash) releases, and the phase bar lights up box by box
-   as the darkness lifts. */
+/* The Gauntlet, about 8s. The scene darkens (warm centre, cool edges) and a
+   bevelled gold arc draws itself while breathing in. The six stones then
+   spiral in clockwise as one vortex, each sweeping ~100 degrees round the
+   centre while closing on its own socket, overshooting slightly and settling
+   with a flare; the Soul stone comes last, up into the centre plate. They
+   pulse in a wave round the arc as light rays turn and a gold bloom builds;
+   one soft flash and a double shockwave release it, and the phase bar lights
+   up box by box as the darkness lifts. */
 function gauntlet(){
   if(reduced()){ toast("The stones are ready. Turn effects on in Settings to see them."); return; }
   const E=eggOverlay("egg-gauntlet"); if(!E) return;
   const {ov,finish,isDone}=E;
-  const W=innerWidth, H=innerHeight, cx=W/2, cy=H*.46, R=Math.min(W*.3,H*.26,190), S=R*.2;
-  const STONES=[["Space","#2d7bff"],["Mind","#ffd23d"],["Reality","#ff2d3a"],["Power","#a24bff"],["Time","#2ee87a"],["Soul","#ff8a1f"]];
-  /* five knuckle sockets along the arc, the sixth on the back of the hand */
-  const seats=[-160,-125,-90,-55,-20].map(a=>[cx+R*Math.cos(a*Math.PI/180), cy+R*Math.sin(a*Math.PI/180)]).concat([[cx,cy+R*.42]]);
-  const arcD=`M ${cx+R*Math.cos(-170*Math.PI/180)} ${cy+R*Math.sin(-170*Math.PI/180)} A ${R} ${R} 0 0 1 ${cx+R*Math.cos(-10*Math.PI/180)} ${cy+R*Math.sin(-10*Math.PI/180)}`;
-  ov.innerHTML=`<i class="eg-dim"></i><i class="eg-rays" style="left:${cx}px;top:${cy}px"></i>
+  const W=innerWidth, H=innerHeight, cx=W/2, cy=H*.46, R=Math.min(W*.3,H*.26,190), S=R*.21;
+  const rad=d=>d*Math.PI/180;
+  const STONES=["#2d7bff","#ffd23d","#ff2d3a","#a24bff","#2ee87a","#ff8a1f"];   /* space mind reality power time soul */
+  /* seats in polar form round the centre: five knuckles on the arc, Soul on the back plate */
+  const seats=[[-160,R],[-125,R],[-90,R],[-55,R],[-20,R],[90,R*.42]];
+  const xy=(a,r)=>[cx+r*Math.cos(rad(a)), cy+r*Math.sin(rad(a))];
+  const p=a=>xy(a,R);
+  const [ax,ay]=p(-172), [bx,by]=p(-8);
+  const arc=`M ${ax} ${ay} A ${R} ${R} 0 0 1 ${bx} ${by}`;
+  ov.innerHTML=`<i class="eg-dim"></i><i class="eg-bloom" style="left:${cx}px;top:${cy}px"></i>
+    <i class="eg-rays" style="left:${cx}px;top:${cy}px"></i>
     <svg class="eg-arc" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-      <defs><linearGradient id="egGold" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#fff2b0"/><stop offset=".45" stop-color="#e9b43c"/><stop offset="1" stop-color="#8a5a12"/></linearGradient></defs>
-      <path d="${arcD}" fill="none" stroke="url(#egGold)" stroke-width="${S*.9}" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/>
-      <ellipse cx="${cx}" cy="${cy+R*.42}" rx="${S*1.15}" ry="${S*1.15}" fill="none" stroke="url(#egGold)" stroke-width="${S*.4}" opacity="0"/>
-      ${seats.map(([x,y])=>`<circle cx="${x}" cy="${y}" r="${S*.62}" fill="#1a1206" stroke="url(#egGold)" stroke-width="${S*.18}" opacity="0"/>`).join("")}
-    </svg><i class="eg-ring" style="left:${cx}px;top:${cy}px"></i><i class="eg-flash"></i>`;
-  const $o=s=>ov.querySelector(s), dim=$o(".eg-dim"), rays=$o(".eg-rays"), arc=$o(".eg-arc path"),
-        plate=$o(".eg-arc ellipse"), sockets=[...ov.querySelectorAll(".eg-arc circle")], ring=$o(".eg-ring"), flash=$o(".eg-flash");
-  dim.animate([{opacity:0},{opacity:.86}],{duration:800,fill:"forwards",easing:"ease-out"});
-  arc.animate([{strokeDashoffset:1},{strokeDashoffset:0}],{duration:900,delay:400,fill:"forwards",easing:"cubic-bezier(.4,0,.2,1)"});
-  [plate,...sockets].forEach((s,i)=>s.animate([{opacity:0},{opacity:1}],{duration:400,delay:900+i*60,fill:"forwards"}));
-  /* each stone streaks in from its own edge along a curve, with a short trail */
-  const from=[[-.15,.2],[.5,-.2],[1.15,.15],[-.15,.85],[1.15,.9],[.5,1.2]];
-  const stones=STONES.map(([,c],i)=>{
-    const [tx,ty]=seats[i], fx=from[i][0]*W, fy=from[i][1]*H, mx=(fx+tx)/2+(ty-fy)*.25, my=(fy+ty)/2+(fx-tx)*.25;
-    const at=(x,y,k)=>`translate(${x-S/2}px,${y-S/2}px) scale(${k})`;
-    const path=[{transform:at(fx,fy,.5),opacity:0},{transform:at(mx,my,1.1),opacity:1,offset:.55},{transform:at(tx,ty,1),opacity:1}];
-    const t0=1300+i*420;
-    [3,2,1].forEach(n=>{ const g=document.createElement("i"); g.className="eg-stone ghost"; g.style.cssText=`--c:${c};width:${S}px;height:${S}px`;
-      ov.appendChild(g); g.animate(path.map(f=>({...f,opacity:f.opacity*.18*n})),{duration:700,delay:t0+n*45,easing:"cubic-bezier(.3,.6,.2,1)"}); });
-    const st=document.createElement("i"); st.className="eg-stone"; st.style.cssText=`--c:${c};width:${S}px;height:${S}px`;
+      <defs>
+        <linearGradient id="egGold" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#fff0b8"/><stop offset=".35" stop-color="#f0c04e"/>
+          <stop offset=".7" stop-color="#b9821f"/><stop offset="1" stop-color="#6e4710"/></linearGradient>
+        <radialGradient id="egSock" cx=".45" cy=".4" r=".7">
+          <stop offset="0" stop-color="#2a1d08"/><stop offset=".7" stop-color="#120c04"/><stop offset="1" stop-color="#5a3c0e"/></radialGradient>
+      </defs>
+      <g class="eg-metal">
+        <path d="${arc}" fill="none" stroke="#2b1a05" stroke-width="${S*1.05}" stroke-linecap="round" transform="translate(0 ${S*.12})" opacity=".8" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/>
+        <path d="${arc}" fill="none" stroke="url(#egGold)" stroke-width="${S*.92}" stroke-linecap="round" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/>
+        <path d="${arc}" fill="none" stroke="#fff7d6" stroke-width="${S*.12}" stroke-linecap="round" transform="translate(0 ${-S*.28})" opacity=".55" pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"/>
+        <circle cx="${cx}" cy="${cy+R*.42}" r="${S*1.2}" fill="url(#egSock)" stroke="url(#egGold)" stroke-width="${S*.42}" opacity="0"/>
+        ${seats.slice(0,5).map(([a])=>{ const [x,y]=p(a); return `<circle cx="${x}" cy="${y}" r="${S*.64}" fill="url(#egSock)" stroke="url(#egGold)" stroke-width="${S*.2}" opacity="0"/>`; }).join("")}
+      </g>
+    </svg><i class="eg-ring" style="left:${cx}px;top:${cy}px"></i><i class="eg-ring thin" style="left:${cx}px;top:${cy}px"></i><i class="eg-flash"></i>`;
+  const $o=s=>ov.querySelector(s), dim=$o(".eg-dim"), bloom=$o(".eg-bloom"), rays=$o(".eg-rays"), metal=$o(".eg-metal"),
+        strokes=[...ov.querySelectorAll(".eg-metal path")], plates=[...ov.querySelectorAll(".eg-metal circle")],
+        rings=[...ov.querySelectorAll(".eg-ring")], flash=$o(".eg-flash");
+  const SMOOTH="cubic-bezier(.65,0,.35,1)";
+  dim.animate([{opacity:0},{opacity:.9}],{duration:900,fill:"forwards",easing:"ease-out"});
+  /* the gauntlet draws on while breathing in */
+  metal.style.transformOrigin=`${cx}px ${cy}px`;
+  metal.animate([{transform:"scale(.9)",opacity:.6},{transform:"scale(1)",opacity:1}],{duration:1500,delay:300,easing:"cubic-bezier(.2,.8,.3,1)",fill:"forwards"});
+  strokes.forEach(s=>s.animate([{strokeDashoffset:1},{strokeDashoffset:0}],{duration:1200,delay:400,fill:"forwards",easing:SMOOTH}));
+  plates.forEach((c,i)=>c.animate([{opacity:0,transform:"scale(.6)"},{opacity:1,transform:"scale(1)"}],
+    {duration:450,delay:1150+i*70,fill:"forwards",easing:"cubic-bezier(.2,.9,.3,1.3)"}));
+  rays.animate([{transform:"translate(-50%,-50%) rotate(0deg)"},{transform:"translate(-50%,-50%) rotate(90deg)"}],{duration:9000,easing:"linear",fill:"forwards"});
+  rays.animate([{opacity:0},{opacity:.35,offset:.4},{opacity:.95,offset:.85},{opacity:0}],{duration:6700,delay:1300,fill:"forwards"});
+  bloom.animate([{opacity:0,transform:"translate(-50%,-50%) scale(.5)"},{opacity:.85,transform:"translate(-50%,-50%) scale(1.15)"}],
+    {duration:4200,delay:1500,easing:"ease-in",fill:"forwards"});
+
+  /* stones move with the `translate` property and grow with `scale`: browsers
+     apply translate after scale, so growing (here and in the pulse) happens
+     on the spot instead of pushing the stone away from the corner */
+  /* the vortex: sample a clockwise spiral into each seat, eased, with an overshoot and settle */
+  const FLY=1150, GAP=360, T0=1500;
+  const stones=STONES.map((c,i)=>{
+    const [sa,sr]=seats[i], a0=sa-100, r0=Math.hypot(W,H)*.62;
+    const frames=[];
+    for(let k=0;k<=8;k++){
+      const t=k/8, e=1-Math.pow(1-t,3);                       /* fast in, gentle arrival */
+      const [x,y]=xy(a0+(sa-a0)*e, r0+(sr-r0)*e);
+      frames.push({translate:`${x-S/2}px ${y-S/2}px`, scale:`${.45+.7*e}`, opacity:Math.min(1,t*3), offset:t*.82});
+    }
+    const [tx,ty]=xy(sa,sr);
+    frames.push({translate:`${tx-S/2}px ${ty-S/2}px`,scale:"1.18",opacity:1,offset:.9});   /* overshoot */
+    frames.push({translate:`${tx-S/2}px ${ty-S/2}px`,scale:"1",opacity:1});                  /* settle */
+    const t0=T0+i*GAP+(i===5?160:0);
+    [1,2,3].forEach(n=>{
+      const g=document.createElement("i"); g.className="eg-stone ghost"; g.style.cssText=`--c:${c};width:${S}px;height:${S}px`;
+      ov.appendChild(g);
+      g.animate(frames.slice(0,9).map(f=>({...f,opacity:f.opacity*(.42-n*.11)})),{duration:FLY*.82,delay:t0+n*55,easing:"linear"});
+    });
+    const st=document.createElement("i"); st.className="eg-stone"; st.style.cssText=`--c:${c};width:${S}px;height:${S}px;box-shadow:inset 0 ${-S*.12}px ${S*.2}px rgba(0,0,0,.5),inset 0 ${S*.07}px ${S*.1}px rgba(255,255,255,.3),0 0 ${S*.5}px ${S*.08}px ${c}`;
     ov.appendChild(st);
-    st.animate(path,{duration:700,delay:t0,easing:"cubic-bezier(.3,.6,.2,1)",fill:"forwards"});
-    st.animate([{boxShadow:`0 0 0 0 ${c}`},{boxShadow:`0 0 ${S*1.6}px ${S*.5}px ${c}`},{boxShadow:`0 0 ${S*.7}px ${S*.15}px ${c}`}],
-               {duration:600,delay:t0+620,fill:"forwards"});   /* seats with a flare */
+    st.animate(frames,{duration:FLY,delay:t0,easing:"linear",fill:"forwards"});
+    /* seating flare: a ring of the stone's colour opening out of the socket */
+    const fl=document.createElement("i"); fl.className="eg-seat"; fl.style.cssText=`--c:${c};left:${tx}px;top:${ty}px;width:${S*1.4}px;height:${S*1.4}px`;
+    ov.appendChild(fl);
+    fl.animate([{opacity:.9,transform:"translate(-50%,-50%) scale(.6)"},{opacity:0,transform:"translate(-50%,-50%) scale(2.2)"}],
+               {duration:650,delay:t0+FLY*.86,easing:"ease-out",fill:"forwards"});
     return st;
   });
-  /* all six pulse together; rays spill out behind */
-  const P=4000;
-  rays.animate([{opacity:0,transform:"translate(-50%,-50%) rotate(0deg) scale(.6)"},{opacity:.9,transform:"translate(-50%,-50%) rotate(40deg) scale(1)"}],
-               {duration:1600,delay:P,fill:"forwards",easing:"ease-in-out"});
-  stones.forEach(st=>st.animate([{scale:"1"},{scale:"1.3"},{scale:"1"},{scale:"1.35"},{scale:"1"}],{duration:1400,delay:P,easing:"ease-in-out"}));
-  ov.animate([{translate:"0 0"},{translate:"2px -1px"},{translate:"-2px 1px"},{translate:"1px 2px"},{translate:"0 0"}],{duration:300,delay:P+1350,iterations:2});
-  /* release: one soft flash and a shockwave; the darkness lifts */
-  const Rel=P+1900;
-  flash.animate([{opacity:0},{opacity:.32},{opacity:0}],{duration:420,delay:Rel});
-  ring.animate([{opacity:.95,transform:"translate(-50%,-50%) scale(.1)"},{opacity:0,transform:"translate(-50%,-50%) scale(9)"}],
-               {duration:1300,delay:Rel,easing:"cubic-bezier(.1,.7,.3,1)",fill:"forwards"});
-  dim.animate([{opacity:.86},{opacity:0}],{duration:1000,delay:Rel+150,fill:"forwards",easing:"ease-in-out"});
-  rays.animate([{opacity:.9},{opacity:0}],{duration:700,delay:Rel+100,fill:"forwards"});
-  /* the phase bar lights up box by box, in its own colours */
+
+  /* power up: a pulse wave round the arc, twice, brighter the second time */
+  const PU=T0+5*GAP+160+FLY+250;
+  /* gem depth: a dark lower rim and a light upper edge, kept under the glow */
+  const INSET=`inset 0 ${-S*.12}px ${S*.2}px rgba(0,0,0,.5), inset 0 ${S*.07}px ${S*.1}px rgba(255,255,255,.3)`;
+  stones.forEach((st,i)=>{
+    const c=STONES[i];
+    st.animate([{scale:"1",filter:"brightness(1)"},{scale:"1.22",filter:"brightness(1.35)"},{scale:"1",filter:"brightness(1.1)"},
+                {scale:"1.3",filter:"brightness(1.6)"},{scale:"1.08",filter:"brightness(1.25)"}],
+               {duration:1500,delay:PU+i*70,easing:"ease-in-out",fill:"forwards"});
+    st.animate([{boxShadow:`${INSET}, 0 0 ${S*.5}px ${S*.08}px ${c}`},{boxShadow:`${INSET}, 0 0 ${S*1.8}px ${S*.5}px ${c}`}],
+               {duration:1500,delay:PU+i*70,easing:"ease-in",fill:"forwards"});
+  });
+  ov.animate([{translate:"0 0"},{translate:"1.5px -1px"},{translate:"-1.5px 1px"},{translate:"1px 1.5px"},{translate:"0 0"}],
+             {duration:260,delay:PU+1250,iterations:2});
+
+  /* release: one soft flash, a double shockwave; the dark lifts; the phase bar answers */
+  const REL=PU+1750;
+  flash.animate([{opacity:0},{opacity:.3},{opacity:0}],{duration:520,delay:REL,easing:"ease-out"});
+  rings.forEach((r,i)=>r.animate([{opacity:.95,transform:"translate(-50%,-50%) scale(.15)"},{opacity:0,transform:"translate(-50%,-50%) scale(10)"}],
+    {duration:1500+i*300,delay:REL+i*140,easing:"cubic-bezier(.12,.7,.3,1)",fill:"forwards"}));
+  dim.animate([{opacity:.9},{opacity:0}],{duration:1200,delay:REL+150,fill:"forwards",easing:"ease-in-out"});
+  bloom.animate([{opacity:.85},{opacity:0}],{duration:900,delay:REL,fill:"forwards"});
   [...document.querySelectorAll("#constellation .seg")].forEach((seg,i)=>{
     const c=(PHASES[i+1]||PHASES[1]).c;
-    seg.animate([{boxShadow:`0 0 0 0 ${c}00`},{boxShadow:`0 0 22px 3px ${c}`,offset:.3},{boxShadow:`0 0 0 0 ${c}00`}],
-                {duration:1100,delay:Rel+250+i*180,easing:"ease-out"});
+    seg.animate([{boxShadow:`0 0 0 0 ${c}00`},{boxShadow:`0 0 24px 4px ${c}`,offset:.3},{boxShadow:`0 0 0 0 ${c}00`}],
+                {duration:1200,delay:REL+300+i*170,easing:"ease-out"});
   });
-  /* the gauntlet and stones fade last */
-  const out=[$o(".eg-arc"),...stones].map(e=>e.animate([{opacity:1},{opacity:0}],{duration:900,delay:Rel+600,fill:"forwards"}));
+  /* the gauntlet and stones lift away last */
+  const out=[$o(".eg-arc"),...stones].map(e=>e.animate([{opacity:1,transform:"translateY(0)"},{opacity:0,transform:"translateY(-14px)"}],
+    {duration:1000,delay:REL+650,easing:"ease-in",fill:"forwards"}));
   Promise.all(out.map(a=>a.finished)).then(()=>{ if(!isDone()) finish(); },()=>{});
 }
 
-/* Mirror Dimension, about 3.4s: the page itself shatters into tiles that fold
+/* Mirror Dimension, about 4.4s: the page itself shatters into tiles that fold
    and spin like a kaleidoscope, then snap back. The tiles are copies of only
    what is on screen (off-screen rows become empty spacers of the same height,
    so phones aren't copying the whole list a dozen times); sticky bars are
@@ -2583,19 +2639,131 @@ function mirrorDimension(){
   }
   wrap.style.visibility="hidden";
   const spin=document.createElement("div"); spin.className="eg-spin"; tiles.forEach(({t})=>spin.appendChild(t)); ov.appendChild(spin);
-  const D=3400, EASE="cubic-bezier(.45,0,.25,1)";
+  const D=4400, EASE="cubic-bezier(.45,0,.25,1)";       /* 30% slower than first built */
+  const EDGE0="0 0 0 0 rgba(255,255,255,0), 0 0 0 0 rgba(210,230,255,0)",
+        EDGE=(a,g)=>`0 0 0 1px rgba(255,255,255,${a}), 0 0 ${g}px 2px rgba(210,230,255,${a*.6})`;   /* the film's silver-white edges */
   tiles.forEach(({t,r,c},i)=>{
     const dx=(c+.5-cols/2)*(W<=620?70:90), dy=(r+.5-rows/2)*70, s=i%2?-1:1;
     const tilt=(i*47%60)-30, z=((i*73)%300)-120, flip=(i%3===0);
     t.animate([
-      {transform:"none",boxShadow:"0 0 0 0 rgba(255,140,40,0)"},
-      {transform:`translate3d(${dx*.6}px,${dy*.6}px,${z*.5}px) rotateY(${tilt}deg) rotateX(${-tilt*.6}deg)`,boxShadow:"0 0 18px 1px rgba(255,140,40,.55)",offset:.22},
-      {transform:`translate3d(${dx}px,${dy}px,${z}px) rotateY(${flip?180*s:tilt*1.6}deg) rotateZ(${tilt*.5}deg) scale(.92)`,boxShadow:"0 0 26px 2px rgba(255,120,30,.7)",offset:.5},
-      {transform:`translate3d(${dx*.5}px,${dy*.5}px,${z*.3}px) rotateY(${flip?360*s:-tilt}deg) rotateZ(${-tilt*.3}deg)`,boxShadow:"0 0 18px 1px rgba(255,140,40,.5)",offset:.76},
-      {transform:"none",boxShadow:"0 0 0 0 rgba(255,140,40,0)"}],{duration:D,easing:EASE,fill:"forwards"});
+      {transform:"none",boxShadow:EDGE0},
+      {transform:`translate3d(${dx*.6}px,${dy*.6}px,${z*.5}px) rotateY(${tilt}deg) rotateX(${-tilt*.6}deg)`,boxShadow:EDGE(.6,16),offset:.22},
+      {transform:`translate3d(${dx}px,${dy}px,${z}px) rotateY(${flip?180*s:tilt*1.6}deg) rotateZ(${tilt*.5}deg) scale(.92)`,boxShadow:EDGE(.8,24),offset:.5},
+      {transform:`translate3d(${dx*.5}px,${dy*.5}px,${z*.3}px) rotateY(${flip?360*s:-tilt}deg) rotateZ(${-tilt*.3}deg)`,boxShadow:EDGE(.55,16),offset:.76},
+      {transform:"none",boxShadow:EDGE0}],{duration:D,easing:EASE,fill:"forwards"});
   });
   spin.animate([{transform:"rotate(0deg) scale(1)"},{transform:"rotate(18deg) scale(.86)",offset:.4},{transform:"rotate(-8deg) scale(.9)",offset:.7},{transform:"rotate(0deg) scale(1)"}],
                {duration:D,easing:EASE,fill:"forwards"}).finished.then(()=>{ if(!isDone()) finish(); },()=>{});
+}
+
+/* Scarlet Witch, about 6.5s. Start: a crimson vignette seeps in from the
+   edges and threads of chaos magic draw themselves in, each curling to a
+   poster on screen and looping round it. Middle: those posters lift off the
+   page, grow, tilt and bob, glowing red, while the page dims; the threads flow
+   inward into a crimson orb ringed by slowly turning runes (drawn as strokes,
+   not a font, so no phone shows empty boxes). End, the start in reverse: the
+   orb releases one soft red mist ring with a gentle flash; as it passes each
+   poster, that poster drifts back down into its exact place, nearest first,
+   and the vignette recedes out through the edges. The floating posters are
+   copies laid exactly over the real ones and swapped back invisibly. */
+function scarlet(){
+  if(reduced()){ toast("Chaos magic needs effects on. Turn them on in Settings."); return; }
+  const W=innerWidth, H=innerHeight, cx=W/2, cy=H*.45, U=Math.min(W,H);
+  const tiles=[...document.querySelectorAll("#list li.entry .tile")]
+    .map(t=>({t,b:t.getBoundingClientRect()})).filter(({b})=>b.width&&b.top>40&&b.bottom<H-40&&b.left>=0&&b.right<=W).slice(0,8);
+  const E=eggOverlay("egg-scarlet",()=>tiles.forEach(({t})=>t.style.visibility="")); if(!E) return;
+  const {ov,finish,isDone}=E;
+  let seed=7; const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+  /* threads: from an edge point, curling, to each poster (or round the centre if none show) */
+  const targets=tiles.length?tiles.map(({b})=>[b.left+b.width/2,b.top+b.height/2,b])
+                            :[0,1,2,3,4].map(i=>{ const a=i*72-90; return [cx+U*.22*Math.cos(a*Math.PI/180),cy+U*.22*Math.sin(a*Math.PI/180),null]; });
+  const edgePt=i=>{ const s=i%4, f=.15+rnd()*.7; return s===0?[f*W,-20]:s===1?[W+20,f*H]:s===2?[f*W,H+20]:[-20,f*H]; };
+  const thread=([x0,y0],[x1,y1],swirl)=>{
+    const mx=(x0+x1)/2, my=(y0+y1)/2, nx=-(y1-y0), ny=x1-x0, k=swirl*.35;
+    return `M ${x0} ${y0} C ${x0+(mx-x0)*.6+nx*k} ${y0+(my-y0)*.6+ny*k}, ${mx-nx*k*.6} ${my-ny*k*.6}, ${x1} ${y1}`;
+  };
+  const inPaths=targets.map(([x,y],i)=>thread(edgePt(i),[x,y],i%2?1:-1));
+  const loops=targets.map(([x,y,b])=>{ const rx=(b?b.width*.8:U*.04), ry=(b?b.height*.62:U*.04); return `M ${x+rx} ${y} A ${rx} ${ry} 0 1 1 ${x+rx-.1} ${y+.5}`; });
+  const outPaths=targets.map(([x,y],i)=>thread([x,y],[cx,cy],i%2?-1:1));
+  /* runes: little stroke glyphs placed round a ring */
+  const RN=18, RR=U*.16, runes=[];
+  for(let i=0;i<RN;i++){
+    const a=i/RN*Math.PI*2, gx=cx+RR*Math.cos(a), gy=cy+RR*Math.sin(a), s=U*.018, d=[];
+    d.push(`M ${gx} ${gy-s} L ${gx} ${gy+s}`);
+    for(let j=0;j<2;j++){ const y=gy-s+rnd()*2*s, dir=rnd()<.5?-1:1; d.push(`M ${gx} ${y} L ${gx+dir*s*.8} ${y+(rnd()<.5?-s*.6:s*.6)}`); }
+    runes.push(`<path d="${d.join(" ")}" transform="rotate(${a*180/Math.PI+90} ${gx} ${gy})"/>`);
+  }
+  ov.innerHTML=`<i class="sw-veil"></i><i class="sw-dim"></i>
+    <svg class="sw-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+      <g class="sw-in">${inPaths.map(d=>`<path d="${d}" pathLength="1"/>`).join("")}</g>
+      <g class="sw-loops">${loops.map(d=>`<path d="${d}" pathLength="1"/>`).join("")}</g>
+      <g class="sw-out">${outPaths.map(d=>`<path d="${d}" pathLength="1"/>`).join("")}</g>
+      <g class="sw-runes" style="transform-origin:${cx}px ${cy}px">${runes.join("")}</g>
+    </svg>
+    <i class="sw-orb" style="left:${cx}px;top:${cy}px;width:${U*.2}px;height:${U*.2}px"></i>
+    <i class="sw-mist" style="left:${cx}px;top:${cy}px;width:${U*.3}px;height:${U*.3}px"></i><i class="sw-flash"></i>`;
+  const $o=s=>ov.querySelector(s), veil=$o(".sw-veil"), dim=$o(".sw-dim"), orb=$o(".sw-orb"), mist=$o(".sw-mist"), flash=$o(".sw-flash"),
+        ins=[...ov.querySelectorAll(".sw-in path")], lps=[...ov.querySelectorAll(".sw-loops path")],
+        outs=[...ov.querySelectorAll(".sw-out path")], runeG=$o(".sw-runes");
+  const DRAW=[{strokeDashoffset:1},{strokeDashoffset:0}], ERASE=[{strokeDashoffset:0},{strokeDashoffset:-1}];
+  const SOFT="cubic-bezier(.45,0,.2,1)";
+  /* start: the magic seeps in from the edges */
+  veil.animate([{opacity:0},{opacity:1}],{duration:1200,easing:"ease-out",fill:"forwards"});
+  ins.forEach((p,i)=>p.animate(DRAW,{duration:900,delay:250+i*110,easing:SOFT,fill:"forwards"}));
+  lps.forEach((p,i)=>p.animate(DRAW,{duration:500,delay:1050+i*110,easing:"ease-out",fill:"forwards"}));
+  /* the posters: copies laid exactly over the real ones, lifted and held */
+  const T_LIFT=1500;
+  dim.animate([{opacity:0},{opacity:.62}],{duration:900,delay:T_LIFT-200,fill:"forwards",easing:"ease-in-out"});
+  const lifts=tiles.map(({t,b},i)=>{
+    const c=t.cloneNode(true); c.className="tile sw-tile";
+    c.style.cssText=`left:${b.left}px;top:${b.top}px;width:${b.width}px;height:${b.height}px`;
+    ov.appendChild(c); t.style.visibility="hidden";
+    /* fan out towards the centre: alternate rows step further in, so the lifted
+       posters spread on a diagonal instead of stacking in a column */
+    const rot=(i%2?1:-1)*(4+rnd()*5), up=-(U*.03+rnd()*U*.03), sc=1.5;
+    const dx=(cx-(b.left+b.width/2))*(.22+(i%2)*.18)+(i%2?1:-1)*U*.02;
+    const held=`translate(${dx}px,${up}px) rotate(${rot}deg) scale(${sc})`;
+    const rise=c.animate([{transform:"none",boxShadow:"0 0 0 0 rgba(230,30,50,0)"},
+                          {transform:held,boxShadow:"0 0 22px 4px rgba(230,30,50,.75)"}],
+                         {duration:900,delay:T_LIFT+i*80,easing:"cubic-bezier(.2,.8,.3,1)",fill:"forwards"});
+    const bob=c.animate([{translate:"0 0"},{translate:`0 ${-U*.012}px`},{translate:"0 0"}],
+                        {duration:1400+i*90,delay:T_LIFT+900+i*80,iterations:Infinity,easing:"ease-in-out",composite:"add"});
+    return {c,b,held,rise,bob};
+  });
+  /* the threads flow inward and become the orb, ringed by turning runes */
+  const T_ORB=2900;
+  ins.forEach(p=>p.animate(ERASE,{duration:600,delay:T_ORB-300,easing:"ease-in",fill:"forwards"}));
+  lps.forEach(p=>p.animate([{opacity:1},{opacity:0}],{duration:500,delay:T_ORB-200,fill:"forwards"}));
+  outs.forEach((p,i)=>{ p.animate(DRAW,{duration:700,delay:T_ORB+i*60,easing:SOFT,fill:"forwards"});
+                        p.animate(ERASE,{duration:500,delay:T_ORB+750+i*60,easing:"ease-in",fill:"forwards"}); });
+  orb.animate([{opacity:0,transform:"translate(-50%,-50%) scale(.2)"},{opacity:1,transform:"translate(-50%,-50%) scale(1)"}],
+              {duration:1000,delay:T_ORB+300,easing:"cubic-bezier(.2,.8,.3,1.2)",fill:"forwards"});
+  orb.animate([{scale:"1"},{scale:"1.08"},{scale:"1"}],{duration:700,delay:T_ORB+1300,iterations:2,easing:"ease-in-out",composite:"add"});
+  runeG.animate([{opacity:0,transform:"rotate(-20deg) scale(.85)"},{opacity:.95,transform:"rotate(0deg) scale(1)"}],
+                {duration:900,delay:T_ORB+500,easing:"ease-out",fill:"forwards"});
+  runeG.animate([{rotate:"0deg"},{rotate:"40deg"}],{duration:3000,delay:T_ORB+500,easing:"linear",fill:"forwards",composite:"add"});
+  /* end: release; the mist passes and sets each poster down; the edges clear */
+  const T_REL=T_ORB+2800, MIST=1500, reach=Math.hypot(W,H)*.75;
+  orb.animate([{opacity:1,transform:"translate(-50%,-50%) scale(1)"},{opacity:0,transform:"translate(-50%,-50%) scale(1.8)"}],
+              {duration:500,delay:T_REL,easing:"ease-out",fill:"forwards"});
+  runeG.animate([{opacity:.95},{opacity:0}],{duration:400,delay:T_REL,fill:"forwards"});
+  flash.animate([{opacity:0},{opacity:.22},{opacity:0}],{duration:600,delay:T_REL,easing:"ease-out"});
+  mist.animate([{opacity:.9,transform:"translate(-50%,-50%) scale(.3)"},{opacity:0,transform:`translate(-50%,-50%) scale(${reach/(U*.15)})`}],
+               {duration:MIST,delay:T_REL,easing:"cubic-bezier(.15,.6,.35,1)",fill:"forwards"});
+  dim.animate([{opacity:.62},{opacity:0}],{duration:1200,delay:T_REL+200,fill:"forwards",easing:"ease-in-out"});
+  veil.animate([{opacity:1},{opacity:0}],{duration:1600,delay:T_REL+300,fill:"forwards",easing:"ease-in-out"});
+  const lands=lifts.map(({c,b,held,bob})=>{
+    const dist=Math.hypot(b.left+b.width/2-cx,b.top+b.height/2-cy), when=T_REL+MIST*.5*Math.min(1,dist/reach)+120;
+    /* the bob eases out as it comes down, so nothing jumps at the swap */
+    setTimeout(()=>{ if(isDone()) return; const cur=getComputedStyle(c).translate; bob.cancel();
+      c.animate([{translate:cur==="none"?"0 0":cur},{translate:"0 0"}],{duration:1100,easing:"cubic-bezier(.35,0,.2,1)",fill:"forwards"}); },when);
+    return c.animate([{transform:held,boxShadow:"0 0 22px 4px rgba(230,30,50,.75)"},
+                      {transform:"none",boxShadow:"0 0 0 0 rgba(230,30,50,0)"}],
+                     {duration:1100,delay:when,easing:"cubic-bezier(.35,0,.2,1)",fill:"forwards"}).finished.catch(()=>{});
+  });
+  Promise.all([...lands,
+               veil.getAnimations().slice(-1)[0].finished.catch(()=>{})])
+    .then(()=>{ if(!isDone()){ tiles.forEach(({t})=>t.style.visibility=""); finish(); } },()=>{});
 }
 
 function oneInFourteenMillion(){
@@ -2763,6 +2931,9 @@ const EGGS={
   "infinity stones":{say:"I am inevitable.",                            run:gauntlet, ms:4200},
   "mirror dimension":{say:"You think you know how the world works?",    run:mirrorDimension},
   "strange":       {say:"You think you know how the world works?",      run:mirrorDimension},
+  "scarlet":       {say:"Chaos magic.",                                 run:scarlet},
+  "wanda":         {say:"Chaos magic.",                                 run:scarlet},
+  "scarlet witch": {say:"Chaos magic.",                                 run:scarlet},
   "ultron":        {say:"There are no strings on me.",                  run:glitchTitles},
   "nexus":         {say:"Found the branch. Switching to chronology.",   run:nexus},
   "3000":          {say:"",                                             run:()=>{
@@ -2772,7 +2943,7 @@ const EGGS={
   "jarvis":        {say:"", run:()=>{
     const groups=[
       ["Does something useful", ["all day","binge","tonight","time heist","canon","nexus","assemble","14000605","3000","wakanda","tva"]],
-      ["Just for the look of it", ["snap","blip","gauntlet","mirror dimension","we have a hulk","i am iron man","bifrost","pym","ultron","puny god","on your left","i am groot","dormammu","worthy"]]
+      ["Just for the look of it", ["snap","blip","gauntlet","mirror dimension","scarlet","we have a hulk","i am iron man","bifrost","pym","ultron","puny god","on your left","i am groot","dormammu","worthy"]]
     ];
     readout("At your service",
       groups.map(([h,list])=>`<p class="cmdhead">${h}</p><div class="cmds">${
@@ -2801,6 +2972,8 @@ function searchMode(){
 }
 function commitSearch(){
   const v=$("#q").value;
+  /* on a touch screen, Enter means "done": close the keyboard so the results show */
+  if(matchMedia("(hover:none)").matches) $("#q").blur();
   if(checkEgg(v)){ markDirty(); return; }
   state.q=v; render(true); markDirty();
 }

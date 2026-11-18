@@ -344,7 +344,7 @@ kbd{display:inline-block;padding:1px 5px;border-radius:5px;border:1px solid var(
 
 /* ---------- dust ---------- */
 .fxdefs{position:absolute;width:0;height:0;overflow:hidden}
-.ashing{filter:url(#dust);transition:opacity 1.5s ease-in,transform 1.5s ease-in;will-change:opacity,transform}
+.ashing{filter:url(#dust);transition:opacity 2.3s ease-in,transform 2.3s ease-in;will-change:opacity,transform}
 .ashing.gone{opacity:0;transform:translate(18px,-30px) scale(1.05)}
 #flash{position:fixed;inset:0;z-index:60;pointer-events:none;opacity:0;
   background:radial-gradient(circle at 50% 42%,rgba(255,226,170,.55),transparent 62%);
@@ -771,22 +771,54 @@ body.hulk:before{content:"";position:fixed;inset:0;z-index:54;pointer-events:non
    and opacity only; no backdrop-filter or clip-path (they break phones). */
 .egg{position:fixed;inset:0;z-index:65;pointer-events:auto;overflow:hidden;cursor:pointer}
 .egg i{position:absolute;display:block}
-/* the gauntlet */
-.eg-dim{inset:0;opacity:0;background:radial-gradient(ellipse at 50% 46%,#1c1306 0%,#05060a 70%)}
+/* the gauntlet: graded warm in the centre, cool at the edges */
+.eg-dim{inset:0;opacity:0;
+  background:radial-gradient(ellipse at 50% 44%,#2a1a07 0%,#140d07 32%,#06080d 72%,#020306 100%)}
+.eg-bloom{width:90vmin;height:90vmin;opacity:0;border-radius:50%;transform:translate(-50%,-50%);
+  background:radial-gradient(circle,rgba(255,206,110,.42) 0%,rgba(255,170,60,.16) 35%,transparent 68%)}
 .eg-rays{width:220vmax;height:220vmax;opacity:0;transform:translate(-50%,-50%);border-radius:50%;
-  background:repeating-conic-gradient(from 0deg,rgba(255,214,120,.18) 0deg 4deg,transparent 4deg 18deg);
-  -webkit-mask-image:radial-gradient(circle,#000 0%,transparent 45%);mask-image:radial-gradient(circle,#000 0%,transparent 45%)}
-.eg-arc{position:absolute;inset:0;filter:drop-shadow(0 0 10px rgba(233,180,60,.45))}
+  background:repeating-conic-gradient(from 0deg,rgba(255,214,130,.2) 0deg 3deg,transparent 3deg 15deg);
+  -webkit-mask-image:radial-gradient(circle,#000 0%,transparent 42%);mask-image:radial-gradient(circle,#000 0%,transparent 42%)}
+.eg-arc{position:absolute;inset:0;filter:drop-shadow(0 0 12px rgba(240,180,70,.4))}
+.eg-metal circle{transform-box:fill-box;transform-origin:center}
+/* a gem: specular glint, faint facets, colour deepening to a dark rim */
 .eg-stone{left:0;top:0;opacity:0;border-radius:50%;
-  background:radial-gradient(circle at 35% 30%,#fff 0%,var(--c) 38%,color-mix(in srgb,var(--c) 55%,#000) 100%)}
-.eg-stone.ghost{filter:blur(2px)}
+  background:
+    radial-gradient(ellipse 30% 22% at 34% 27%,rgba(255,255,255,.95),rgba(255,255,255,0) 100%),
+    conic-gradient(from 25deg,rgba(255,255,255,.16),rgba(0,0,0,.16),rgba(255,255,255,.1),rgba(0,0,0,.2),rgba(255,255,255,.14),rgba(0,0,0,.14),rgba(255,255,255,.16)),
+    radial-gradient(circle at 50% 58%,color-mix(in srgb,var(--c) 85%,#fff) 0%,var(--c) 42%,color-mix(in srgb,var(--c) 45%,#000) 100%)}
+.eg-stone.ghost{filter:blur(3px);box-shadow:0 0 14px var(--c)}
+.eg-seat{opacity:0;border-radius:50%;transform:translate(-50%,-50%);border:2px solid var(--c);box-shadow:0 0 16px var(--c)}
 .eg-ring{width:120px;height:120px;opacity:0;border-radius:50%;transform:translate(-50%,-50%);
-  border:3px solid rgba(255,230,160,.9);box-shadow:0 0 30px rgba(255,200,90,.7),inset 0 0 24px rgba(255,200,90,.5)}
-.eg-flash{inset:0;opacity:0;background:#fff3d6;pointer-events:none}
+  border:3px solid rgba(255,232,170,.9);box-shadow:0 0 30px rgba(255,200,90,.7),inset 0 0 24px rgba(255,200,90,.5)}
+.eg-ring.thin{border-width:1px;box-shadow:0 0 14px rgba(255,220,140,.5)}
+.eg-flash{inset:0;opacity:0;background:radial-gradient(circle at 50% 46%,#fff6e0 0%,#ffe2a8 45%,rgba(255,226,168,.4) 100%);pointer-events:none}
+/* scarlet witch: a crimson vignette, chaos-magic threads, a rune-ringed orb */
+.sw-veil{inset:0;opacity:0;
+  background:radial-gradient(ellipse 75% 70% at 50% 45%,transparent 30%,rgba(120,8,24,.55) 70%,rgba(40,0,8,.92) 100%)}
+.sw-dim{inset:0;opacity:0;background:#07020a}
+.sw-svg{position:absolute;inset:0;overflow:visible}
+.sw-svg path{fill:none;stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1}
+.sw-in path,.sw-out path{stroke:#ff3b4e;stroke-width:2.2;filter:drop-shadow(0 0 5px #ff1f3d) drop-shadow(0 0 12px rgba(200,0,40,.8))}
+.sw-loops path{stroke:#ff6b78;stroke-width:1.6;filter:drop-shadow(0 0 6px #ff1f3d)}
+.sw-runes{opacity:0}
+.sw-runes path{stroke:#ff8a95;stroke-width:1.6;stroke-dasharray:none;stroke-dashoffset:0;filter:drop-shadow(0 0 4px #ff2440)}
+.sw-tile{position:absolute;margin:0;z-index:3;border-radius:6px;transform-origin:center}
+.sw-orb{opacity:0;border-radius:50%;transform:translate(-50%,-50%);
+  background:radial-gradient(circle at 42% 38%,#ffd0d6 0%,#ff4a5c 18%,#c4102b 45%,#5a0614 78%,rgba(60,4,14,0) 100%);
+  box-shadow:0 0 40px 10px rgba(230,20,50,.65),0 0 110px 30px rgba(170,0,30,.4)}
+.sw-mist{opacity:0;border-radius:50%;transform:translate(-50%,-50%);
+  background:radial-gradient(circle,transparent 42%,rgba(255,60,80,.38) 58%,rgba(200,10,40,.22) 70%,transparent 80%)}
+.sw-flash{inset:0;opacity:0;background:radial-gradient(circle at 50% 45%,#ffe4e8 0%,rgba(255,120,140,.55) 45%,rgba(255,80,100,0) 100%);pointer-events:none}
 /* the mirror dimension */
 .egg-mirror{perspective:1100px}
 .eg-spin{position:absolute;inset:0;transform-style:preserve-3d}
 .eg-tile{position:absolute;overflow:hidden;transform-style:flat;backface-visibility:visible;will-change:transform}
+/* a faint white glint crossing each shard as it folds, like light on glass */
+.eg-tile::after{content:"";position:absolute;inset:-60%;pointer-events:none;
+  background:linear-gradient(115deg,transparent 44%,rgba(255,255,255,.2) 49%,rgba(235,244,255,.32) 50%,rgba(255,255,255,.2) 51%,transparent 56%);
+  animation:egGlint 4.4s cubic-bezier(.45,0,.25,1) both}
+@keyframes egGlint{0%,12%{transform:translateX(-55%);opacity:0}30%{opacity:1}70%{opacity:1}88%,100%{transform:translateX(55%);opacity:0}}
 
 /* ============================ START-UP INTRO ============================
    A comic you open: its cover floats over a wall of poster panels until a tap,
