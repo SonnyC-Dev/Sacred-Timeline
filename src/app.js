@@ -1089,7 +1089,7 @@ function haystack(m){
 const hayCache={};
 function matches(m,tokens){
   const key=m.id+"|"+(rec(m)?JSON.stringify(rec(m)):"");
-  if(hayCache.k!==key) { hayCache[m.id]=haystack(m); }
+  if(hayCache[m.id+"#k"]!==key){ hayCache[m.id]=haystack(m); hayCache[m.id+"#k"]=key; }   /* rebuilt only when that title changes */
   const h=hayCache[m.id]||haystack(m);
   return tokens.every(t=>h.includes(t));
 }
@@ -1204,7 +1204,9 @@ function render(animate){
   listEl.innerHTML="";
 
   if(!items.length){
-    listEl.innerHTML = `<div class="empty"><b>Nothing matches</b>Clear a filter, or switch on series and specials to widen the field.</div>`;
+    const filtered=state.phase||state.show!=="all"||state.q.trim()||state.maxlen;
+    listEl.innerHTML = `<div class="empty"><b>Nothing matches</b>Clear a filter, or switch on series and specials to widen the field.${filtered?`<button class="btn" id="emptyClear" style="margin-top:12px">Clear filters</button>`:""}</div>`;
+    const ec=document.getElementById("emptyClear"); if(ec) ec.addEventListener("click",clearFilters);
     renderTally(); renderNext(); renderCountdown(); renderFilterBar(); return;
   }
 
@@ -1309,7 +1311,7 @@ function entry(m,n){
         <div style="grid-column:1/-1"><span>Set in</span><b style="font-size:12.5px;font-weight:500">${m.w}</b></div>
       </div>
       <div class="artset">
-        <input type="url" placeholder="Image URL for this title" value="${/^https?:\/\//.test(path)?path:""}">
+        <input type="url" placeholder="Image URL for this title" aria-label="Image URL for this title" value="${/^https?:\/\//.test(path)?path:""}">
         <button class="btn" data-art="set">Use</button>
         ${path?'<button class="btn" data-art="clear">Clear</button>':""}
       </div>
@@ -1344,7 +1346,7 @@ function entry(m,n){
           ${ex.rate?`<button class="clearrate" data-rate="0" aria-label="Clear rating">clear</button>`:""}
         </div>
       </div>
-      <textarea class="note" rows="2" placeholder="Notes about this one…">${(ex.note||"").replace(/</g,"&lt;")}</textarea>` : ""}
+      <textarea class="note" rows="2" placeholder="Notes about this one…" aria-label="Notes about ${m.ti.replace(/"/g,"&quot;")}">${(ex.note||"").replace(/&/g,"&amp;").replace(/</g,"&lt;")}</textarea>` : ""}
 
       <div class="log">
         ${future ? `<span>Out ${relTxt}. Nothing to log yet.</span>`
@@ -1437,6 +1439,12 @@ function entry(m,n){
     note.addEventListener("input",()=>{
       clearTimeout(nt);
       nt=setTimeout(()=>setExtra(m.id,{note:note.value.trim()}),500);
+    });
+    /* also save the moment focus leaves (tapping a rating does that first),
+       so a quick tap can't redraw the row with the old note */
+    note.addEventListener("blur",()=>{
+      clearTimeout(nt);
+      if(note.value.trim()!==(extraOf(m.id).note||"")) setExtra(m.id,{note:note.value.trim()});
     });
   }
   return li;
@@ -1563,10 +1571,19 @@ function renderNext(){
   $("#rand").addEventListener("click",surprise);
 }
 
+/* one way to clear every filter: chips' "Clear all", the empty list's button
+   and Esc all use it, and the address updates so a reload doesn't bring a
+   cleared phase back */
+function clearFilters(){
+  state.phase=0; state.show="all"; state.q=""; state.maxlen=0;
+  $("#show").value="all"; $("#q").value=""; $("#maxlen").value="0";
+  applyTheme(settledPhase); render(true); pushRoute(); markDirty();
+}
 function renderFilterBar(){
   const bar=$("#filterbar"), bits=[];
+  const SHOW={seen:"Watched only",unseen:"Not watched only",part:"Part watched only"};
   if(state.phase) bits.push([PHASES[state.phase].name,()=>{state.phase=0}]);
-  if(state.show!=="all") bits.push([state.show==="seen"?"Watched only":"Not watched only",()=>{state.show="all";$("#show").value="all"}]);
+  if(state.show!=="all") bits.push([SHOW[state.show]||"Filtered",()=>{state.show="all";$("#show").value="all"}]);
   if(state.q.trim()) bits.push([`“${state.q.trim()}”`,()=>{state.q="";$("#q").value=""}]);
   if(state.hideFuture) bits.push(["Unreleased hidden",()=>{state.hideFuture=false;save()}]);
   if(state.maxlen) bits.push([state.maxlen===999?"Over 2½ hours":`Under ${hhmm(state.maxlen)}`,()=>{state.maxlen=0;$("#maxlen").value="0"}]);
@@ -1578,14 +1595,16 @@ function renderFilterBar(){
     bar.appendChild(c);
   }
   bits.forEach(([label,undo])=>{
+    /* the label is plain text: search words must never be read as HTML */
     const c=document.createElement("span"); c.className="chip";
-    c.innerHTML=`${label} <button aria-label="Remove filter">✕</button>`;
-    c.querySelector("button").addEventListener("click",()=>{undo();applyTheme(state.phase||settledPhase);render(true)});
+    const x=document.createElement("button"); x.textContent="✕"; x.setAttribute("aria-label",`Remove filter: ${label}`);
+    c.append(label+" ",x);
+    x.addEventListener("click",()=>{undo();applyTheme(state.phase||settledPhase);render(true);pushRoute();markDirty()});
     bar.appendChild(c);
   });
   if(bits.length>1){
     const b=document.createElement("button"); b.className="btn"; b.textContent="Clear all";
-    b.addEventListener("click",()=>{state.phase=0;state.show="all";state.q="";state.maxlen=0;$("#show").value="all";$("#q").value="";$("#maxlen").value="0";render(true)});
+    b.addEventListener("click",clearFilters);
     bar.appendChild(b);
   }
 }
@@ -2123,6 +2142,8 @@ function focusOn(id){
 
 /* ---------- keyboard ---------- */
 addEventListener("keydown",e=>{
+  /* a dialog, an easter egg or the intro owns the keyboard while it is open */
+  if(document.querySelector(".modal, .egg, #intro")) return;
   const typing=/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
   if(e.key==="/"&&!typing){ e.preventDefault(); setView("list"); $("#q").focus(); return; }
   if(e.key==="Escape"){
@@ -2132,8 +2153,7 @@ addEventListener("keydown",e=>{
       return;
     }
     if(openIds.size){ openIds.clear(); render(); return; }
-    if(state.phase||state.show!=="all"||state.q){ state.phase=0;state.show="all";state.q="";
-      $("#show").value="all";$("#q").value=""; render(true); pushRoute(); }
+    if(state.phase||state.show!=="all"||state.q||state.maxlen) clearFilters();
     return;
   }
   if(typing||e.metaKey||e.ctrlKey||e.altKey) return;
@@ -2172,11 +2192,15 @@ function decodeTitle(){
 /* ---------- small modal, used by bulk marking and export ---------- */
 function modal(html,setup){
   return new Promise(res=>{
+    const opener=document.activeElement;            /* focus goes back here on close */
     const back=document.createElement("div");
     back.className="modal";
     back.innerHTML=`<div class="modalbox" role="dialog" aria-modal="true">${html}</div>`;
     document.body.appendChild(back);
-    const close=v=>{ document.removeEventListener("keydown",esc); back.remove(); res(v); };
+    const h=back.querySelector("h3");               /* the heading names the dialog */
+    if(h){ h.id="modalTitle"; back.firstElementChild.setAttribute("aria-labelledby","modalTitle"); }
+    const close=v=>{ document.removeEventListener("keydown",esc); back.remove();
+      if(opener && opener.isConnected && opener.focus) opener.focus({preventScroll:true}); res(v); };
     const esc=e=>{ if(e.key==="Escape"){ e.preventDefault(); close(null); } };
     document.addEventListener("keydown",esc);
     back.addEventListener("click",e=>{ if(e.target===back) close(null); });
@@ -2319,7 +2343,9 @@ async function bulkApply(ids,on,label){
 }
 /* oldest first, evenly spaced, so a binge reads as a binge and not one day */
 function spreadDates(from,to,n){
-  const a=new Date(from+"T00:00:00").getTime(), b=new Date(to+"T00:00:00").getTime();
+  /* read and write both in UTC: reading local midnight then printing UTC put
+     every date a day early during British Summer Time */
+  const a=new Date(from+"T00:00:00Z").getTime(), b=new Date(to+"T00:00:00Z").getTime();
   if(n===1) return [to];
   return Array.from({length:n},(_,i)=>
     new Date(a+(b-a)*(i/(n-1))).toISOString().slice(0,10));
@@ -2377,7 +2403,8 @@ function toast(msg,opts){
     t.appendChild(b);
   }
   t.classList.add("on");
-  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("on"), o.ms||3400);
+  /* a message with an Undo stays at least 6s, so a mis-tap can be undone */
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove("on"), Math.max(o.ms||3400, o.action?6000:0));
 }
 function flash(){
   const f=$("#flash"); f.classList.add("on");
@@ -2544,11 +2571,13 @@ function eggOverlay(cls,cleanup){
   let done=false;
   const finish=()=>{
     if(done) return; done=true; eggBusy=false;
-    removeEventListener("pointerdown",finish,true); removeEventListener("keydown",finish,true);
+    removeEventListener("pointerdown",skip,true); removeEventListener("keydown",skip,true);
     ov.getAnimations({subtree:true}).forEach(a=>a.cancel());
     ov.remove(); if(cleanup) cleanup();
   };
-  setTimeout(()=>{ addEventListener("pointerdown",finish,true); addEventListener("keydown",finish,true); },300);
+  /* the key that skips does only that: it doesn't also fire a shortcut */
+  const skip=e=>{ if(e.type==="keydown"){ e.preventDefault(); e.stopPropagation(); } finish(); };
+  setTimeout(()=>{ if(!done){ addEventListener("pointerdown",skip,true); addEventListener("keydown",skip,true); } },300);
   return {ov,finish,isDone:()=>done};
 }
 
@@ -2812,113 +2841,158 @@ function mirrorDimension(){
                {duration:D,easing:EASE,fill:"forwards"}).finished.then(()=>{ if(!isDone()) finish(); },()=>{});
 }
 
-/* Scarlet Witch, about 6.5s. Start: a crimson vignette seeps in from the
-   edges and threads of chaos magic draw themselves in, each curling to a
-   poster on screen and looping round it. Middle: those posters lift off the
-   page, grow, tilt and bob, glowing red, while the page dims; the threads flow
-   inward into a crimson orb ringed by slowly turning runes (drawn as strokes,
-   not a font, so no phone shows empty boxes). End, the start in reverse: the
-   orb releases one soft red mist ring with a gentle flash; as it passes each
-   poster, that poster drifts back down into its exact place, nearest first,
-   and the vignette recedes out through the edges. The floating posters are
-   copies laid exactly over the real ones and swapped back invisibly. */
+/* Scarlet Witch, about 7.8s.
+     seep      a crimson vignette closes in from the edges
+     tendrils  smoky threads (three strands each: wide haze, glow, bright core)
+               curl in from the edges and loop round posters on screen
+     caught    each poster twitches as its loop closes, then lifts to its own
+               seat on a ring round the centre (evenly spaced: no overlaps)
+     gather    comets of light run from each poster into the centre
+     orb       halo, two counter-turning smoky wisps, a breathing white-hot
+               core; a hex draws round it, runes appear one by one
+     inhale    the core and runes contract, posters are drawn in slightly
+     release   one soft flash, two mist rings, runes fling outwards
+     return    posters drift home nearest first, settle, leave an afterglow;
+               the vignette widens back out the way it came
+   Glow is layered gradients and stacked strokes: no animated blur or filters,
+   only transform and opacity. Floating posters are copies laid exactly over
+   the real ones and swapped back invisibly. */
 function scarlet(){
   if(reduced()){ toast("Chaos magic needs effects on. Turn them on in Settings."); return; }
-  const W=innerWidth, H=innerHeight, cx=W/2, cy=H*.45, U=Math.min(W,H);
+  const W=innerWidth, H=innerHeight, cx=W/2, cy=H*.45, U=Math.min(W,H), phone=W<=620;
   const tiles=[...document.querySelectorAll("#list li.entry .tile")]
-    .map(t=>({t,b:t.getBoundingClientRect()})).filter(({b})=>b.width&&b.top>40&&b.bottom<H-40&&b.left>=0&&b.right<=W).slice(0,8);
+    .map(t=>({t,b:t.getBoundingClientRect()})).filter(({b})=>b.width&&b.top>40&&b.bottom<H-40&&b.left>=0&&b.right<=W)
+    .slice(0,phone?6:8);
   const E=eggOverlay("egg-scarlet",()=>tiles.forEach(({t})=>t.style.visibility="")); if(!E) return;
   const {ov,finish,isDone}=E;
   let seed=7; const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
-  /* threads: from an edge point, curling, to each poster (or round the centre if none show) */
-  const targets=tiles.length?tiles.map(({b})=>[b.left+b.width/2,b.top+b.height/2,b])
-                            :[0,1,2,3,4].map(i=>{ const a=i*72-90; return [cx+U*.22*Math.cos(a*Math.PI/180),cy+U*.22*Math.sin(a*Math.PI/180),null]; });
+  const SC=phone?1.3:1.5, RR=U*.16, liftH=(tiles[0]?tiles[0].b.height:63)*SC, RING=RR+.6*liftH+12;
+  /* targets: posters on screen, or points round the centre if none show */
+  const targets=tiles.length?tiles.map(({b})=>({x:b.left+b.width/2,y:b.top+b.height/2,b}))
+                            :[0,1,2,3,4].map(i=>{ const a=rad(i*72-90); return {x:cx+U*.22*Math.cos(a),y:cy+U*.22*Math.sin(a),b:null}; });
+  function rad(d){ return d*Math.PI/180; }
+  /* seats: evenly spaced on the ring, matched to posters by angle with the
+     rotation that moves them least, so paths don't cross */
+  const n=targets.length, angOf=t=>Math.atan2(t.y-cy,t.x-cx);
+  const order=targets.map((t,i)=>i).sort((a,b)=>angOf(targets[a])-angOf(targets[b]));
+  let best=0, bestCost=Infinity;
+  for(let r=0;r<n;r++){ let cost=0; order.forEach((ti,j)=>{ const sa=-Math.PI/2+(j+r)*2*Math.PI/n; let d=Math.abs(angOf(targets[ti])-sa)%(2*Math.PI); cost+=Math.min(d,2*Math.PI-d); }); if(cost<bestCost){ bestCost=cost; best=r; } }
+  order.forEach((ti,j)=>{ const sa=-Math.PI/2+(j+best)*2*Math.PI/n; targets[ti].seat=[cx+RING*Math.cos(sa), cy+RING*Math.sin(sa)]; });
+
   const edgePt=i=>{ const s=i%4, f=.15+rnd()*.7; return s===0?[f*W,-20]:s===1?[W+20,f*H]:s===2?[f*W,H+20]:[-20,f*H]; };
-  const thread=([x0,y0],[x1,y1],swirl)=>{
-    const mx=(x0+x1)/2, my=(y0+y1)/2, nx=-(y1-y0), ny=x1-x0, k=swirl*.35;
-    return `M ${x0} ${y0} C ${x0+(mx-x0)*.6+nx*k} ${y0+(my-y0)*.6+ny*k}, ${mx-nx*k*.6} ${my-ny*k*.6}, ${x1} ${y1}`;
-  };
-  const inPaths=targets.map(([x,y],i)=>thread(edgePt(i),[x,y],i%2?1:-1));
-  const loops=targets.map(([x,y,b])=>{ const rx=(b?b.width*.8:U*.04), ry=(b?b.height*.62:U*.04); return `M ${x+rx} ${y} A ${rx} ${ry} 0 1 1 ${x+rx-.1} ${y+.5}`; });
-  const outPaths=targets.map(([x,y],i)=>thread([x,y],[cx,cy],i%2?-1:1));
-  /* runes: little stroke glyphs placed round a ring */
-  const RN=18, RR=U*.16, runes=[];
+  const curve=([x0,y0],[x1,y1],k)=>{ const mx=(x0+x1)/2, my=(y0+y1)/2, nx=-(y1-y0), ny=x1-x0;
+    return `M ${x0} ${y0} C ${x0+(mx-x0)*.6+nx*k} ${y0+(my-y0)*.6+ny*k}, ${mx-nx*k*.6} ${my-ny*k*.6}, ${x1} ${y1}`; };
+  const STRANDS=[["haze",.7],["glow",1],["core",1.3]];
+  const tendrils=targets.map((t,i)=>{ const e=edgePt(i), sw=(i%2?1:-1)*.35;
+    return STRANDS.map(([c,m])=>`<path class="${c}" d="${curve(e,[t.x,t.y],sw*m)}" pathLength="1"/>`).join(""); });
+  const loops=targets.map(t=>{ const rx=t.b?t.b.width*.8:U*.04, ry=t.b?t.b.height*.62:U*.04;
+    return STRANDS.map(([c])=>`<path class="${c}" d="M ${t.x+rx} ${t.y} A ${rx} ${ry} 0 1 1 ${t.x+rx-.1} ${t.y+.5}" pathLength="1"/>`).join(""); });
+  const comets=targets.map((t,i)=>`<path class="comet" d="${curve(t.seat,[cx,cy],(i%2?-1:1)*.2)}" pathLength="1"/>`);
+  /* runes: little stroke glyphs round a ring; a hexagon inside it */
+  const RN=18, runes=[];
   for(let i=0;i<RN;i++){
-    const a=i/RN*Math.PI*2, gx=cx+RR*Math.cos(a), gy=cy+RR*Math.sin(a), s=U*.018, d=[];
-    d.push(`M ${gx} ${gy-s} L ${gx} ${gy+s}`);
+    const a=i/RN*Math.PI*2, gx=cx+RR*Math.cos(a), gy=cy+RR*Math.sin(a), s=U*.018, d=[`M ${gx} ${gy-s} L ${gx} ${gy+s}`];
     for(let j=0;j<2;j++){ const y=gy-s+rnd()*2*s, dir=rnd()<.5?-1:1; d.push(`M ${gx} ${y} L ${gx+dir*s*.8} ${y+(rnd()<.5?-s*.6:s*.6)}`); }
-    runes.push(`<path d="${d.join(" ")}" transform="rotate(${a*180/Math.PI+90} ${gx} ${gy})"/>`);
+    runes.push(`<g class="rune" style="transform-origin:${gx}px ${gy}px"><path class="w" d="${d.join(" ")}" transform="rotate(${a*180/Math.PI+90} ${gx} ${gy})"/><path class="b" d="${d.join(" ")}" transform="rotate(${a*180/Math.PI+90} ${gx} ${gy})"/></g>`);
   }
+  const HX=RR*.72, hex=[0,1,2,3,4,5].map(k=>{ const a=rad(k*60-90); return `${cx+HX*Math.cos(a)},${cy+HX*Math.sin(a)}`; }).join(" ");
   ov.innerHTML=`<i class="sw-veil"></i><i class="sw-dim"></i>
     <svg class="sw-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
-      <g class="sw-in">${inPaths.map(d=>`<path d="${d}" pathLength="1"/>`).join("")}</g>
-      <g class="sw-loops">${loops.map(d=>`<path d="${d}" pathLength="1"/>`).join("")}</g>
-      <g class="sw-out">${outPaths.map(d=>`<path d="${d}" pathLength="1"/>`).join("")}</g>
+      ${tendrils.map(t=>`<g class="sw-in">${t}</g>`).join("")}
+      ${loops.map(l=>`<g class="sw-loop">${l}</g>`).join("")}
+      <g class="sw-comets">${comets.join("")}</g>
+      <polygon class="sw-hex" points="${hex}" pathLength="1"/>
       <g class="sw-runes" style="transform-origin:${cx}px ${cy}px">${runes.join("")}</g>
     </svg>
-    <i class="sw-orb" style="left:${cx}px;top:${cy}px;width:${U*.2}px;height:${U*.2}px"></i>
-    <i class="sw-mist" style="left:${cx}px;top:${cy}px;width:${U*.3}px;height:${U*.3}px"></i><i class="sw-flash"></i>`;
-  const $o=s=>ov.querySelector(s), veil=$o(".sw-veil"), dim=$o(".sw-dim"), orb=$o(".sw-orb"), mist=$o(".sw-mist"), flash=$o(".sw-flash"),
-        ins=[...ov.querySelectorAll(".sw-in path")], lps=[...ov.querySelectorAll(".sw-loops path")],
-        outs=[...ov.querySelectorAll(".sw-out path")], runeG=$o(".sw-runes");
-  const DRAW=[{strokeDashoffset:1},{strokeDashoffset:0}], ERASE=[{strokeDashoffset:0},{strokeDashoffset:-1}];
-  const SOFT="cubic-bezier(.45,0,.2,1)";
-  /* start: the magic seeps in from the edges */
-  veil.animate([{opacity:0},{opacity:1}],{duration:1200,easing:"ease-out",fill:"forwards"});
-  ins.forEach((p,i)=>p.animate(DRAW,{duration:900,delay:250+i*110,easing:SOFT,fill:"forwards"}));
-  lps.forEach((p,i)=>p.animate(DRAW,{duration:500,delay:1050+i*110,easing:"ease-out",fill:"forwards"}));
-  /* the posters: copies laid exactly over the real ones, lifted and held */
-  const T_LIFT=1500;
-  dim.animate([{opacity:0},{opacity:.62}],{duration:900,delay:T_LIFT-200,fill:"forwards",easing:"ease-in-out"});
+    <i class="sw-halo" style="left:${cx}px;top:${cy}px;width:${U*.7}px;height:${U*.7}px"></i>
+    <i class="sw-wisp a" style="left:${cx}px;top:${cy}px;width:${U*.34}px;height:${U*.34}px"></i>
+    <i class="sw-wisp b" style="left:${cx}px;top:${cy}px;width:${U*.28}px;height:${U*.28}px"></i>
+    <i class="sw-core" style="left:${cx}px;top:${cy}px;width:${U*.2}px;height:${U*.2}px"></i>
+    <i class="sw-mist" style="left:${cx}px;top:${cy}px;width:${U*.3}px;height:${U*.3}px"></i>
+    <i class="sw-mist" style="left:${cx}px;top:${cy}px;width:${U*.3}px;height:${U*.3}px"></i>
+    <i class="sw-flash" style="--x:${cx}px;--y:${cy}px"></i>`;
+  const $o=s=>ov.querySelector(s), $$=s=>[...ov.querySelectorAll(s)];
+  const veil=$o(".sw-veil"), dim=$o(".sw-dim"), halo=$o(".sw-halo"), wisps=$$(".sw-wisp"), core=$o(".sw-core"),
+        mists=$$(".sw-mist"), flash=$o(".sw-flash"), hexEl=$o(".sw-hex"), runeG=$o(".sw-runes"), runeEls=$$(".rune");
+  const DRAW=[{strokeDashoffset:1},{strokeDashoffset:0}], SOFT="cubic-bezier(.45,0,.2,1)", F={fill:"forwards"};
+  const CENTRE="translate(-50%,-50%)";
+
+  /* seep */
+  veil.animate([{opacity:0,transform:"scale(1.12)"},{opacity:1,transform:"scale(1)"}],{duration:1100,easing:"ease-out",...F});
+  /* tendrils, then loops; the moment each loop closes, its poster is caught */
+  const caughtAt=[];
+  $$(".sw-in").forEach((g,i)=>{
+    const t0=150+i*100;
+    [...g.children].forEach((p,s)=>p.animate(DRAW,{duration:850,delay:t0+s*60,easing:SOFT,...F}));
+    [...$$(".sw-loop")[i].children].forEach((p,s)=>p.animate(DRAW,{duration:420,delay:t0+850+s*60,easing:"ease-out",...F}));
+    caughtAt[i]=t0+850+420+60;
+  });
+  dim.animate([{opacity:0},{opacity:.6}],{duration:900,delay:1300,easing:"ease-in-out",...F});
   const lifts=tiles.map(({t,b},i)=>{
     const c=t.cloneNode(true); c.className="tile sw-tile";
     c.style.cssText=`left:${b.left}px;top:${b.top}px;width:${b.width}px;height:${b.height}px`;
+    const aura=document.createElement("i"); aura.className="sw-aura"; c.appendChild(aura);
     ov.appendChild(c); t.style.visibility="hidden";
-    /* fan out towards the centre: alternate rows step further in, so the lifted
-       posters spread on a diagonal instead of stacking in a column */
-    const rot=(i%2?1:-1)*(4+rnd()*5), up=-(U*.03+rnd()*U*.03), sc=1.5;
-    const dx=(cx-(b.left+b.width/2))*(.22+(i%2)*.18)+(i%2?1:-1)*U*.02;
-    const held=`translate(${dx}px,${up}px) rotate(${rot}deg) scale(${sc})`;
-    const rise=c.animate([{transform:"none",boxShadow:"0 0 0 0 rgba(230,30,50,0)"},
-                          {transform:held,boxShadow:"0 0 22px 4px rgba(230,30,50,.75)"}],
-                         {duration:900,delay:T_LIFT+i*80,easing:"cubic-bezier(.2,.8,.3,1)",fill:"forwards"});
-    const bob=c.animate([{translate:"0 0"},{translate:`0 ${-U*.012}px`},{translate:"0 0"}],
-                        {duration:1400+i*90,delay:T_LIFT+900+i*80,iterations:Infinity,easing:"ease-in-out",composite:"add"});
-    return {c,b,held,rise,bob};
+    const [sx,sy]=targets[i].seat, ox=b.left+b.width/2, oy=b.top+b.height/2;
+    const tilt=(i%2?1:-1)*(3+rnd()*4);
+    const held=`translate(${sx-ox}px,${sy-oy}px) rotate(${tilt}deg) scale(${SC})`;
+    const at=caughtAt[i];
+    c.animate([{transform:"none"},{transform:"rotate(1.5deg) scale(1.04)",offset:.5},{transform:"none"}],{duration:160,delay:at});
+    c.animate([{transform:"none"},{transform:held}],{duration:800,delay:at+160,easing:"cubic-bezier(.2,.8,.3,1)",...F});
+    aura.animate([{opacity:0},{opacity:1}],{duration:500,delay:at,...F});
+    const bob=c.animate([{translate:"0 0"},{translate:`0 ${-U*.01}px`},{translate:"0 0"}],
+                        {duration:1500+i*90,delay:at+960,iterations:Infinity,easing:"ease-in-out",composite:"add"});
+    return {c,b,held,bob,aura,ox,oy,sx,sy};
   });
-  /* the threads flow inward and become the orb, ringed by turning runes */
-  const T_ORB=2900;
-  ins.forEach(p=>p.animate(ERASE,{duration:600,delay:T_ORB-300,easing:"ease-in",fill:"forwards"}));
-  lps.forEach(p=>p.animate([{opacity:1},{opacity:0}],{duration:500,delay:T_ORB-200,fill:"forwards"}));
-  outs.forEach((p,i)=>{ p.animate(DRAW,{duration:700,delay:T_ORB+i*60,easing:SOFT,fill:"forwards"});
-                        p.animate(ERASE,{duration:500,delay:T_ORB+750+i*60,easing:"ease-in",fill:"forwards"}); });
-  orb.animate([{opacity:0,transform:"translate(-50%,-50%) scale(.2)"},{opacity:1,transform:"translate(-50%,-50%) scale(1)"}],
-              {duration:1000,delay:T_ORB+300,easing:"cubic-bezier(.2,.8,.3,1.2)",fill:"forwards"});
-  orb.animate([{scale:"1"},{scale:"1.08"},{scale:"1"}],{duration:700,delay:T_ORB+1300,iterations:2,easing:"ease-in-out",composite:"add"});
-  runeG.animate([{opacity:0,transform:"rotate(-20deg) scale(.85)"},{opacity:.95,transform:"rotate(0deg) scale(1)"}],
-                {duration:900,delay:T_ORB+500,easing:"ease-out",fill:"forwards"});
-  runeG.animate([{rotate:"0deg"},{rotate:"40deg"}],{duration:3000,delay:T_ORB+500,easing:"linear",fill:"forwards",composite:"add"});
-  /* end: release; the mist passes and sets each poster down; the edges clear */
-  const T_REL=T_ORB+2800, MIST=1500, reach=Math.hypot(W,H)*.75;
-  orb.animate([{opacity:1,transform:"translate(-50%,-50%) scale(1)"},{opacity:0,transform:"translate(-50%,-50%) scale(1.8)"}],
-              {duration:500,delay:T_REL,easing:"ease-out",fill:"forwards"});
-  runeG.animate([{opacity:.95},{opacity:0}],{duration:400,delay:T_REL,fill:"forwards"});
-  flash.animate([{opacity:0},{opacity:.22},{opacity:0}],{duration:600,delay:T_REL,easing:"ease-out"});
-  mist.animate([{opacity:.9,transform:"translate(-50%,-50%) scale(.3)"},{opacity:0,transform:`translate(-50%,-50%) scale(${reach/(U*.15)})`}],
-               {duration:MIST,delay:T_REL,easing:"cubic-bezier(.15,.6,.35,1)",fill:"forwards"});
-  dim.animate([{opacity:.62},{opacity:0}],{duration:1200,delay:T_REL+200,fill:"forwards",easing:"ease-in-out"});
-  veil.animate([{opacity:1},{opacity:0}],{duration:1600,delay:T_REL+300,fill:"forwards",easing:"ease-in-out"});
-  const lands=lifts.map(({c,b,held,bob})=>{
-    const dist=Math.hypot(b.left+b.width/2-cx,b.top+b.height/2-cy), when=T_REL+MIST*.5*Math.min(1,dist/reach)+120;
-    /* the bob eases out as it comes down, so nothing jumps at the swap */
-    setTimeout(()=>{ if(isDone()) return; const cur=getComputedStyle(c).translate; bob.cancel();
-      c.animate([{translate:cur==="none"?"0 0":cur},{translate:"0 0"}],{duration:1100,easing:"cubic-bezier(.35,0,.2,1)",fill:"forwards"}); },when);
-    return c.animate([{transform:held,boxShadow:"0 0 22px 4px rgba(230,30,50,.75)"},
-                      {transform:"none",boxShadow:"0 0 0 0 rgba(230,30,50,0)"}],
-                     {duration:1100,delay:when,easing:"cubic-bezier(.35,0,.2,1)",fill:"forwards"}).finished.catch(()=>{});
+  /* threads fade as the posters rise */
+  [...$$(".sw-in"),...$$(".sw-loop")].forEach(g=>g.animate([{opacity:1},{opacity:0}],{duration:600,delay:2400,...F}));
+  /* gather: comets from each seat into the centre */
+  $$(".comet").forEach((p,i)=>p.animate([{strokeDashoffset:.3,opacity:1},{strokeDashoffset:-1,opacity:1}],{duration:650,delay:2700+i*50,easing:"ease-in"}));
+  /* the orb forms: halo, then smoke, then the core with a glint */
+  halo.animate([{opacity:0,transform:`${CENTRE} scale(.5)`},{opacity:1,transform:`${CENTRE} scale(1)`}],{duration:900,delay:3000,easing:"ease-out",...F});
+  wisps.forEach((w,i)=>{
+    w.animate([{opacity:0},{opacity:.9}],{duration:700,delay:3200+i*120,...F});
+    w.animate([{transform:`${CENTRE} rotate(0deg)`},{transform:`${CENTRE} rotate(${i?-360:360}deg)`}],{duration:i?7000:5000,delay:3200,iterations:Infinity});
   });
-  Promise.all([...lands,
-               veil.getAnimations().slice(-1)[0].finished.catch(()=>{})])
+  core.animate([{opacity:0,transform:`${CENTRE} scale(.2)`},{opacity:1,transform:`${CENTRE} scale(1)`}],{duration:700,delay:3400,easing:"cubic-bezier(.2,.8,.3,1.2)",...F});
+  core.animate([{scale:"1"},{scale:"1.07",offset:.3},{scale:".97",offset:.55},{scale:"1.05",offset:.8},{scale:"1"}],{duration:1400,delay:4100,iterations:2,composite:"add"});
+  /* the hex draws, the runes appear one by one, the two turn opposite ways */
+  hexEl.animate(DRAW,{duration:700,delay:3300,easing:SOFT,...F});
+  hexEl.style.transformOrigin=`${cx}px ${cy}px`;
+  hexEl.animate([{rotate:"0deg"},{rotate:"-25deg"}],{duration:2600,delay:3300,easing:"linear",...F});
+  runeEls.forEach((r,i)=>r.animate([{opacity:0,transform:"scale(.5)"},{opacity:1,transform:"scale(1)"}],{duration:300,delay:3500+i*40,easing:"ease-out",...F}));
+  runeG.animate([{rotate:"0deg"},{rotate:"40deg"}],{duration:2600,delay:3300,easing:"linear",...F});
+  /* inhale */
+  const INH=5600, REL=5950;
+  core.animate([{transform:`${CENTRE} scale(1)`},{transform:`${CENTRE} scale(.8)`}],{duration:350,delay:INH,easing:"ease-in",...F});
+  runeG.animate([{scale:"1"},{scale:".9"}],{duration:350,delay:INH,easing:"ease-in",composite:"add",...F});
+  lifts.forEach(L=>{ const dx=cx-L.sx, dy=cy-L.sy, d=Math.hypot(dx,dy)||1;
+    L.inh=L.c.animate([{translate:"0 0"},{translate:`${dx/d*6}px ${dy/d*6}px`}],{duration:350,delay:INH,easing:"ease-in",composite:"add",...F}); });
+  /* release */
+  flash.animate([{opacity:0},{opacity:.35},{opacity:0}],{duration:500,delay:REL,easing:"ease-out"});
+  mists.forEach((m,i)=>m.animate([{opacity:.9,transform:`${CENTRE} scale(.3)`},{opacity:0,transform:`${CENTRE} scale(${Math.hypot(W,H)*.75/(U*.15)})`}],
+    {duration:1500+i*300,delay:REL+i*140,easing:"cubic-bezier(.15,.6,.35,1)",...F}));
+  runeG.animate([{opacity:1,scale:"1"},{opacity:0,scale:"1.6"}],{duration:600,delay:REL,easing:"ease-out",composite:"add",...F});
+  [halo,...wisps,core].forEach(e=>e.animate([{opacity:getComputedStyle(e).opacity||1},{opacity:0}],{duration:500,delay:REL,easing:"ease-out",...F}));
+  hexEl.animate([{opacity:1},{opacity:0}],{duration:400,delay:REL,...F});
+  dim.animate([{opacity:.6},{opacity:0}],{duration:1200,delay:REL+250,easing:"ease-in-out",...F});
+  /* return: nearest first, a small settle, a crimson afterglow where each lands */
+  const reach=Math.hypot(W,H)*.75;
+  const lands=lifts.map(L=>{
+    const when=6000+Math.min(1,Math.hypot(L.ox-cx,L.oy-cy)/reach)*500;
+    setTimeout(()=>{ if(isDone()) return; const cur=getComputedStyle(L.c).translate; L.bob.cancel(); if(L.inh) L.inh.cancel();   /* both offsets ease out together */
+      L.c.animate([{translate:cur==="none"?"0 0":cur},{translate:"0 0"}],{duration:1000,easing:SOFT,...F}); },when);
+    L.aura.animate([{opacity:1},{opacity:0}],{duration:900,delay:when,...F});
+    const glow=document.createElement("i"); glow.className="sw-after";
+    glow.style.cssText=`left:${L.ox}px;top:${L.oy}px;width:${L.b.width*2.4}px;height:${L.b.width*2.4}px`;
+    ov.appendChild(glow);
+    glow.animate([{opacity:0},{opacity:.8,offset:.3},{opacity:0}],{duration:800,delay:when+850});
+    return L.c.animate([{transform:L.held},{transform:"scale(.98)",offset:.82},{transform:"none"}],
+                       {duration:1000,delay:when,easing:SOFT,...F}).finished.catch(()=>{});
+  });
+  /* the vignette leaves as it came */
+  const leave=veil.animate([{opacity:1,transform:"scale(1)"},{opacity:0,transform:"scale(1.12)"}],{duration:1600,delay:6200,easing:"ease-in-out",...F});
+  Promise.all([...lands,leave.finished.catch(()=>{})])
     .then(()=>{ if(!isDone()){ tiles.forEach(({t})=>t.style.visibility=""); finish(); } },()=>{});
 }
 
@@ -3162,7 +3236,7 @@ async function exportBackup(){
     if(!b || JSON.stringify(b)!==JSON.stringify(meta[id])) slim[id]=meta[id];
   }
   const prefs={}; PREF_KEYS.forEach(k=>prefs[k]=state[k]);
-  const payload={watched:state.watched, extra:state.extra, meta:slim, prefs, label, exported:today(), v:3};
+  const payload={watched:state.watched, extra:state.extra, hidden:state.hidden, meta:slim, prefs, label, exported:today(), v:3};
   const blob=new Blob([JSON.stringify(payload)],{type:"application/json"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
   const slug=(label||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,30);
@@ -3186,6 +3260,7 @@ function importBackup(){
       if(!j.watched) throw 0;
       state.watched=j.watched;
       if(j.extra && typeof j.extra==="object") state.extra=Object.assign({},state.extra,j.extra);
+      if(j.hidden && typeof j.hidden==="object") state.hidden=Object.assign({},state.hidden,j.hidden);   /* merged, like the rest */
       if(j.meta && typeof j.meta==="object"){ meta=Object.assign({},meta,j.meta); saveMeta(); }
       let prefsApplied=false;
       if(j.prefs && typeof j.prefs==="object"){

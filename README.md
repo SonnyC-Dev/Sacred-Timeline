@@ -1,8 +1,9 @@
 # Sacred Timeline
 
 A personal Marvel watch tracker. 62 films and series, six orderings, watch
-history, ratings, stats. One self-contained HTML file — no build step, no
-dependencies, no network.
+history, ratings, stats. Runs as a website (src/) or as one self-contained HTML
+file. No dependencies; the only network use is the Space Grotesk font from
+Google Fonts (it falls back to a system font offline) and optional Gist sync.
 
 Live site: https://sonnyc-dev.github.io/Sacred-Timeline/ — published from
 `src/` by `.github/workflows/pages.yml` on every push to `main` (GitHub Pages,
@@ -35,8 +36,8 @@ build swaps it for everything inlined, so the single file never uses it.
 ```
 src/index.html          page shell
 src/dev-loader.js       loads the JSON, then app.js (src/ only)
-src/styles.css          44 KB
-src/app.js              112 KB
+src/styles.css          about 60 KB (measured 2026-11-18)
+src/app.js              about 180 KB (measured 2026-11-18)
 src/data/titles.json    the 62 titles
 src/data/artwork.json   runtimes, episode counts, poster paths
 src/assets/posters/     62 JPEGs, 1.8 MB
